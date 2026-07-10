@@ -1,0 +1,57 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0b0d10;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #d5d9e0;
+}
+
+#root {
+  height: 100%;
+}
+
+a {
+  color: #6fa8ff;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #9cc2ff;
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2f37;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hov-a:hover {
+  background: #191d24;
+}
+
+.hov-b:hover {
+  background: #181c22;
+}
+
+.hov-c:hover {
+  border-color: #5a4a8f;
+}
