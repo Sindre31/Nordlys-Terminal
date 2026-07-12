@@ -13,6 +13,7 @@ import {
   useSummary,
   useInsider,
   useFundamentals,
+  useRiskStats,
   fmtDayMon,
   computePortfolio,
   buildChartPath,
@@ -421,6 +422,15 @@ export default function Terminal() {
   };
   const port = computePortfolio(live, POSITIONS, CASH_NOK);
   const sinceIncStr = (port.sinceInception >= 0 ? '+' : '') + port.sinceInception.toFixed(1) + '%';
+  // Weight pairs (fraction of total portfolio value) for the real risk engine.
+  const riskPairs = port.rows
+    .map((r) => {
+      const y = STOCK_YAHOO[r.ticker];
+      const w = port.totalValue > 0 ? r.valueNok / port.totalValue : 0;
+      return y && w > 0 ? `${y}:${w.toFixed(4)}` : null;
+    })
+    .filter(Boolean) as string[];
+  const riskStats = useRiskStats(riskPairs, macro.policyRate ?? 4.25);
 
   const watchlist = order.map((sym) => ({
     ticker: sym,
@@ -875,6 +885,15 @@ export default function Terminal() {
     }
   });
   const portBeta = betaW > 0 ? betaNum / betaW : null;
+
+  // Real risk metrics from the history engine (fall back to designed values / weighted beta).
+  const rBeta = riskStats.beta != null ? riskStats.beta.toFixed(2) : portBeta != null ? portBeta.toFixed(2) : '1.18';
+  const rVol = riskStats.annVol != null ? riskStats.annVol.toFixed(1) + '%' : '21.4%';
+  const rVar = riskStats.var95 != null ? riskStats.var95.toFixed(1) + '%' : '−2.8%';
+  const rVarNok = riskStats.var95 != null ? '−NOK ' + fmtNum(Math.abs((riskStats.var95 / 100) * port.totalValue), 0) : '−NOK 36 000';
+  const rMdd = riskStats.maxDrawdown != null ? riskStats.maxDrawdown.toFixed(1) + '%' : '−14.2%';
+  const rSharpe = riskStats.sharpe != null ? riskStats.sharpe.toFixed(2) : '1.34';
+  const rVolNote = riskStats.annVol != null ? (riskStats.annVol > 20 ? 'elevated' : riskStats.annVol > 12 ? 'moderate' : 'low') : 'elevated';
 
   // ---- Currency exposure derived from the live portfolio ----
   const CCY: Record<string, 'NOK' | 'USD' | 'Mixed'> = {
@@ -1613,11 +1632,11 @@ export default function Terminal() {
 
       
       <div className="m-grid5" style={css("display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Portfolio beta</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{portBeta != null ? portBeta.toFixed(2) : '1.18'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>weighted · vs market</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Ann. volatility</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>21.4%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>elevated</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>1-day VaR (95%)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>−2.8%</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>−NOK 36 000</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Max drawdown</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>−14.2%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>since inception</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sharpe (1y)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>1.34</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>risk-adjusted</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Portfolio beta</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{rBeta}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>vs OSEBX · 1y</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Ann. volatility</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>{rVol}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{rVolNote}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>1-day VaR (95%)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>{rVar}</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{rVarNok}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Max drawdown</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>{rMdd}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>1y trailing</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sharpe (1y)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{rSharpe}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>risk-adjusted</div></div>
       </div>
 
       <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>

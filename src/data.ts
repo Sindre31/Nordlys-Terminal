@@ -344,6 +344,33 @@ export interface SummaryInfo {
   sell: number;
   earningsDate: number | null;
 }
+export interface RiskStats {
+  annVol: number | null;
+  maxDrawdown: number | null;
+  var95: number | null;
+  sharpe: number | null;
+  beta: number | null;
+  days: number;
+}
+// Real portfolio risk metrics from 1y price history. `pairs` are
+// "SYMBOL:weight" strings (weight = fraction of total portfolio value).
+export function useRiskStats(pairs: string[], rf: number, intervalMs = 1800000): RiskStats {
+  const [stats, setStats] = useState<RiskStats>({ annVol: null, maxDrawdown: null, var95: null, sharpe: null, beta: null, days: 0 });
+  const key = pairs.join(',');
+  useEffect(() => {
+    if (!key) return;
+    let alive = true;
+    const load = async () => {
+      const j = (await getJSON(`/api/history?symbols=${encodeURIComponent(key)}&rf=${rf}`)) as RiskStats | null;
+      if (alive && j) setStats(j);
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [key, rf, intervalMs]);
+  return stats;
+}
+
 export interface InsiderTrade {
   id: number;
   ticker: string;
