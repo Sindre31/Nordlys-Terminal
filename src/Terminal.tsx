@@ -1,4 +1,22 @@
 import React, { useState } from 'react';
+import {
+  ALL_SYMBOLS,
+  STOCK_YAHOO,
+  INDEX_TILES,
+  FX_RATES,
+  useQuotes,
+  useNews,
+  useChart,
+  useOsloClock,
+  buildChartPath,
+  fmtPrice,
+  fmtFx,
+  fmtNum,
+  fmtVol,
+  fmtTime,
+  type Quote,
+  type QuoteMap,
+} from './data';
 
 function css(str: string): React.CSSProperties {
   const obj: Record<string, string> = {};
@@ -314,7 +332,45 @@ export default function Terminal() {
   const idle = 'padding:5px 12px; border-radius:5px; color:#8A929E; cursor:pointer; font-size:12.5px;';
   const set = (t: Tab) => () => { setTab(t); setStock(null); };
   const open = (sym: string) => () => setStock(sym);
-  const S = stocks();
+
+  // ---- Live data (falls back to the designed values until it loads) ----
+  const live: QuoteMap = useQuotes(ALL_SYMBOLS);
+  const clock = useOsloClock();
+  const marketNews = useNews('OSEBX Oslo Bors Norway stocks');
+  const stockNews = useNews(stock ? STOCK_YAHOO[stock] || stock : 'OSEBX Oslo Bors');
+  const idxCloses = useChart('OSEBX.OL', '1mo');
+  const detailCloses = useChart(stock ? STOCK_YAHOO[stock] || stock : null, '1mo');
+
+  // Merge live quotes over the static base, preserving the shape the UI uses.
+  const base = stocks();
+  const S: ReturnType<typeof stocks> = {};
+  for (const k of Object.keys(base)) {
+    const y = STOCK_YAHOO[k];
+    const q: Quote | undefined = y ? live[y] : undefined;
+    if (q) {
+      S[k] = {
+        ...base[k],
+        last: fmtPrice(q.price),
+        chg: q.changePct,
+        open: q.open != null ? fmtPrice(q.open) : base[k].open,
+        range:
+          q.dayLow != null && q.dayHigh != null
+            ? `${fmtPrice(q.dayLow)} – ${fmtPrice(q.dayHigh)}`
+            : base[k].range,
+        vol: q.volume != null ? fmtVol(q.volume) : base[k].vol,
+        cur: q.currency || base[k].cur,
+      };
+    } else {
+      S[k] = base[k];
+    }
+  }
+  // Live change % for a ticker (used by holdings tables), else the static value.
+  const liveChg = (sym: string, fallback: number): number => {
+    const y = STOCK_YAHOO[sym];
+    const q = y ? live[y] : undefined;
+    return q ? q.changePct : fallback;
+  };
+
   const order = ['EQNR', 'DNB', 'TEL', 'NHY', 'MOWI', 'YAR', 'AKRBP', 'KOG', 'SALM'];
 
   const watchlist = order.map((sym) => ({
@@ -387,7 +443,7 @@ export default function Terminal() {
     { ticker: 'NVDA', name: 'NVIDIA', type: 'Share · NASDAQ · Tech', alloc: '6.0%', value: '77 070', chg: 1.88, conv: 'Medium', driver: 'Rate-cut + AI capex', ask: false },
     { ticker: 'YAR', name: 'Yara International', type: 'Share · Oslo Børs · Materials', alloc: '6.0%', value: '77 070', chg: 0.88, conv: 'Medium', driver: 'Grain-disruption hedge', ask: true },
     { ticker: 'MOWI', name: 'Mowi', type: 'Share · Oslo Børs · Seafood', alloc: '9.0%', value: '115 605', chg: -1.15, conv: 'Trim', driver: 'Spot price weakness', ask: true },
-  ].map((h) => ({ ...h, chgEl: chgEl(h.chg, 12.5), convEl: convBadge(h.conv), askEl: askTag(h.ask), open: S[h.ticker] ? open(h.ticker) : undefined }));
+  ].map((h) => ({ ...h, chgEl: chgEl(liveChg(h.ticker, h.chg), 12.5), convEl: convBadge(h.conv), askEl: askTag(h.ask), open: S[h.ticker] ? open(h.ticker) : undefined }));
 
   const aiSignals = [
     { cat: 'US Politics', source: 'Reuters', sent: 'Watch', text: 'Trump floats 25% tariff on European aluminium imports at rally', tickers: 'NHY · YAR', time: '13:52' },
@@ -576,6 +632,51 @@ export default function Terminal() {
     { name: 'US–China trade deal', how: 'Global risk appetite improves; diversified beta rallies.', v: 1.6, hit: 'GLOBAL · NVDA' },
   ].map((sc) => ({ ...sc, impactEl: scImpact(sc.v) }));
 
+  // ---- Derived live values ----
+  const indexTiles = INDEX_TILES.map((t) => {
+    const q = live[t.symbol];
+    const dec = t.kind === 'fx' ? 3 : 2;
+    const prefix = t.kind === 'usd' ? '$' : '';
+    return { label: t.label, value: q ? prefix + fmtNum(q.price, dec) : null, chgPct: q ? q.changePct : null };
+  });
+
+  const osebx = live['OSEBX.OL'];
+
+  const ranked = order
+    .map((sym) => ({ sym, chg: liveChg(sym, base[sym].chg) }))
+    .sort((a, b) => b.chg - a.chg);
+  const gainers = ranked.slice(0, 4);
+  const losers = ranked.slice(-4).reverse();
+
+  const fxRates = FX_RATES.map((t) => {
+    const q = live[t.symbol];
+    return { label: t.label, value: q ? fmtFx(q.price) : null, chgPct: q ? q.changePct : null };
+  });
+
+  const idxPath = buildChartPath(idxCloses, 700, 210, 20, 30);
+  const detailPath = buildChartPath(detailCloses, 660, 240, 20, 20);
+
+  const feedItems = marketNews.length
+    ? marketNews.slice(0, 8).map((n) => ({
+        ticker: (n.tickers[0] || 'MKT').replace('.OL', ''),
+        source: n.publisher || 'News',
+        time: fmtTime(n.time),
+        title: n.title,
+        link: n.link,
+      }))
+    : newsList.map((n) => ({ ...n, link: '' }));
+
+  const sdNews = stockNews.length
+    ? stockNews.slice(0, 4).map((n) => ({ title: n.title, meta: `${n.publisher || 'News'} · ${fmtTime(n.time)}`, link: n.link }))
+    : [
+        { title: 'Equinor lifts quarterly dividend, unveils $1.2bn buyback', meta: 'Reuters · 14:21', link: '' },
+        { title: 'DNB Markets raises Equinor target to 340 NOK', meta: 'E24 · 11:05', link: '' },
+        { title: 'Johan Castberg field starts production ahead of schedule', meta: 'Bloomberg · Yesterday', link: '' },
+      ];
+
+  const pctColor = (v: number) => (v >= 0 ? '#3DBB84' : '#E4655E');
+  const pctText = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+
   const navMarkets = tab === 'markets' ? active : idle;
   const navWatch = tab === 'watchlist' ? active : idle;
   const navNews = tab === 'news' ? active : idle;
@@ -641,20 +742,21 @@ export default function Terminal() {
       <span className="mono">⌕</span> Search symbol…
     </div>
     <div className="mono hide-sm" style={css("display:flex; align-items:center; gap:6px; font-size:11.5px; color:#8A929E;")}>
-      <span style={css("width:7px; height:7px; border-radius:50%; background:#0E8A5F; box-shadow:0 0 0 3px rgba(14,138,95,0.18);")}></span>
-      OSLO OPEN · 14:32 CET
+      <span style={css(`width:7px; height:7px; border-radius:50%; background:${clock.open ? '#0E8A5F' : '#5B626C'}; box-shadow:0 0 0 3px rgba(14,138,95,0.18);`)}></span>
+      {clock.open ? 'OSLO OPEN' : 'OSLO CLOSED'} · {clock.time}
     </div>
     <div style={css("width:28px; height:28px; border-radius:50%; background:#2A2F37; display:flex; align-items:center; justify-content:center; font-size:11px; color:#C6CCD4;")}>JA</div>
   </div>
 
   
-  <div className="mono" style={css("display:flex; align-items:center; height:34px; background:#0B0D10; border-bottom:1px solid #23272E; padding:0 4px; flex:0 0 auto; overflow:hidden;")}>
-    <div style={css("display:flex; align-items:baseline; gap:7px; padding:0 16px; border-right:1px solid #1D2229; font-size:12px;")}><span style={css("color:#8A929E;")}>OSEBX</span><span style={css("color:#F2F4F7;")}>1 486.20</span><span style={css("color:#3DBB84;")}>+0.62%</span></div>
-    <div style={css("display:flex; align-items:baseline; gap:7px; padding:0 16px; border-right:1px solid #1D2229; font-size:12px;")}><span style={css("color:#8A929E;")}>OBX</span><span style={css("color:#F2F4F7;")}>1 342.55</span><span style={css("color:#3DBB84;")}>+0.71%</span></div>
-    <div style={css("display:flex; align-items:baseline; gap:7px; padding:0 16px; border-right:1px solid #1D2229; font-size:12px;")}><span style={css("color:#8A929E;")}>USD/NOK</span><span style={css("color:#F2F4F7;")}>10.612</span><span style={css("color:#E4655E;")}>-0.18%</span></div>
-    <div style={css("display:flex; align-items:baseline; gap:7px; padding:0 16px; border-right:1px solid #1D2229; font-size:12px;")}><span style={css("color:#8A929E;")}>EUR/NOK</span><span style={css("color:#F2F4F7;")}>11.481</span><span style={css("color:#E4655E;")}>-0.09%</span></div>
-    <div style={css("display:flex; align-items:baseline; gap:7px; padding:0 16px; border-right:1px solid #1D2229; font-size:12px;")}><span style={css("color:#8A929E;")}>BRENT</span><span style={css("color:#F2F4F7;")}>$82.14</span><span style={css("color:#3DBB84;")}>+1.04%</span></div>
-    <div style={css("display:flex; align-items:baseline; gap:7px; padding:0 16px; font-size:12px;")}><span style={css("color:#8A929E;")}>GOLD</span><span style={css("color:#F2F4F7;")}>$2 388</span><span style={css("color:#3DBB84;")}>+0.31%</span></div>
+  <div className="mono" style={css("display:flex; align-items:center; height:34px; background:#0B0D10; border-bottom:1px solid #23272E; padding:0 4px; flex:0 0 auto; overflow-x:auto;")}>
+    {indexTiles.map((t, i) => (
+      <div key={i} style={css(`display:flex; align-items:baseline; gap:7px; padding:0 16px; ${i < indexTiles.length - 1 ? 'border-right:1px solid #1D2229;' : ''} font-size:12px; flex:0 0 auto;`)}>
+        <span style={css("color:#8A929E;")}>{t.label}</span>
+        <span style={css("color:#F2F4F7;")}>{t.value ?? '—'}</span>
+        <span style={css(`color:${t.chgPct == null ? '#5B626C' : pctColor(t.chgPct)};`)}>{t.chgPct == null ? '·' : pctText(t.chgPct)}</span>
+      </div>
+    ))}
   </div>
 
   
@@ -702,8 +804,8 @@ export default function Terminal() {
             </div>
           </div>
           <div style={css("display:flex; align-items:baseline; gap:10px; margin-top:6px;")}>
-            <span className="mono" style={css("font-size:26px; font-weight:600; color:#F2F4F7;")}>1 486.20</span>
-            <span className="mono" style={css("font-size:13px; color:#3DBB84;")}>+9.14 (+0.62%)</span>
+            <span className="mono" style={css("font-size:26px; font-weight:600; color:#F2F4F7;")}>{osebx ? fmtNum(osebx.price, 2) : '1 486.20'}</span>
+            <span className="mono" style={css(`font-size:13px; color:${osebx ? pctColor(osebx.changePct) : '#3DBB84'};`)}>{osebx ? `${osebx.change >= 0 ? '+' : ''}${fmtNum(osebx.change, 2)} (${pctText(osebx.changePct)})` : '+9.14 (+0.62%)'}</span>
           </div>
         </div>
         <div style={css("padding:6px 6px 0;")}>
@@ -712,8 +814,8 @@ export default function Terminal() {
             <line x1="0" y1="52" x2="700" y2="52" stroke="#20242B" strokeWidth="1"/>
             <line x1="0" y1="105" x2="700" y2="105" stroke="#20242B" strokeWidth="1"/>
             <line x1="0" y1="158" x2="700" y2="158" stroke="#20242B" strokeWidth="1"/>
-            <path d="M0,150 L46,140 L93,156 L140,120 L186,132 L233,101 L280,112 L326,80 L373,96 L420,70 L466,86 L513,54 L560,66 L606,44 L653,52 L700,30 L700,210 L0,210 Z" fill="url(#mkgrad)"/>
-            <polyline points="0,150 46,140 93,156 140,120 186,132 233,101 280,112 326,80 373,96 420,70 466,86 513,54 560,66 606,44 653,52 700,30" fill="none" stroke="#3DBB84" strokeWidth="2"/>
+            <path d={idxPath ? idxPath.area : "M0,150 L46,140 L93,156 L140,120 L186,132 L233,101 L280,112 L326,80 L373,96 L420,70 L466,86 L513,54 L560,66 L606,44 L653,52 L700,30 L700,210 L0,210 Z"} fill="url(#mkgrad)"/>
+            <polyline points={idxPath ? idxPath.line : "0,150 46,140 93,156 140,120 186,132 233,101 280,112 326,80 373,96 420,70 466,86 513,54 560,66 606,44 653,52 700,30"} fill="none" stroke={idxPath && !idxPath.up ? '#E4655E' : '#3DBB84'} strokeWidth="2"/>
           </svg>
         </div>
         <div style={css("padding:12px 18px 8px; border-top:1px solid #23272E;")}>
@@ -733,19 +835,17 @@ export default function Terminal() {
           <div style={css("border-right:1px solid #23272E; padding:11px 16px;")}>
             <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#3DBB84; font-weight:600;")}>▲ Top gainers</span>
             <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
-              <div style={css("display:flex; justify-content:space-between; padding:4px 0;")}><span style={css("color:#EDEFF2;")}>NHY</span><span style={css("color:#3DBB84;")}>+2.08%</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:4px 0;")}><span style={css("color:#EDEFF2;")}>AKRBP</span><span style={css("color:#3DBB84;")}>+1.62%</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:4px 0;")}><span style={css("color:#EDEFF2;")}>EQNR</span><span style={css("color:#3DBB84;")}>+1.24%</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:4px 0;")}><span style={css("color:#EDEFF2;")}>TOM</span><span style={css("color:#3DBB84;")}>+1.11%</span></div>
+              {gainers.map((g, i) => (
+                <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
+              ))}
             </div>
           </div>
           <div style={css("padding:11px 16px;")}>
             <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#E4655E; font-weight:600;")}>▼ Top losers</span>
             <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
-              <div style={css("display:flex; justify-content:space-between; padding:4px 0;")}><span style={css("color:#EDEFF2;")}>MOWI</span><span style={css("color:#E4655E;")}>-1.15%</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:4px 0;")}><span style={css("color:#EDEFF2;")}>SALM</span><span style={css("color:#E4655E;")}>-0.74%</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:4px 0;")}><span style={css("color:#EDEFF2;")}>FRO</span><span style={css("color:#E4655E;")}>-0.52%</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:4px 0;")}><span style={css("color:#EDEFF2;")}>TEL</span><span style={css("color:#E4655E;")}>-0.32%</span></div>
+              {losers.map((g, i) => (
+                <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
+              ))}
             </div>
           </div>
         </div>
@@ -758,11 +858,12 @@ export default function Terminal() {
           <span className="mono" style={css("font-size:11px; color:#5B626C;")}>Live</span>
         </div>
         <div style={css("overflow-y:auto; flex:1;")}>
-          <div style={css("padding:11px 14px; border-bottom:1px solid #191D23;")}><div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>EQNR</span><span>14:21</span><span style={css("color:#8A929E;")}>Reuters</span></div><div style={css("font-size:12.5px; line-height:1.4; color:#DDE1E7;")}>Equinor lifts quarterly dividend, announces new $1.2bn buyback tranche</div></div>
-          <div style={css("padding:11px 14px; border-bottom:1px solid #191D23;")}><div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>NHY</span><span>13:58</span><span style={css("color:#8A929E;")}>E24</span></div><div style={css("font-size:12.5px; line-height:1.4; color:#DDE1E7;")}>Norsk Hydro raises aluminium output guidance on stronger European demand</div></div>
-          <div style={css("padding:11px 14px; border-bottom:1px solid #191D23;")}><div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>MOWI</span><span>13:40</span><span style={css("color:#8A929E;")}>DN</span></div><div style={css("font-size:12.5px; line-height:1.4; color:#DDE1E7;")}>Mowi shares slip as salmon spot prices fall for a third straight week</div></div>
-          <div style={css("padding:11px 14px; border-bottom:1px solid #191D23;")}><div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>DNB</span><span>12:55</span><span style={css("color:#8A929E;")}>Bloomberg</span></div><div style={css("font-size:12.5px; line-height:1.4; color:#DDE1E7;")}>DNB reiterates 2026 return-on-equity target ahead of Q2 report</div></div>
-          <div style={css("padding:11px 14px; border-bottom:1px solid #191D23;")}><div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>MKT</span><span>12:30</span><span style={css("color:#8A929E;")}>E24</span></div><div style={css("font-size:12.5px; line-height:1.4; color:#DDE1E7;")}>Oslo Børs opens higher as Brent crude rebounds above $82</div></div>
+          {feedItems.slice(0, 6).map((n, i) => (
+            <a key={i} href={n.link || undefined} target="_blank" rel="noreferrer" style={css("display:block; padding:11px 14px; border-bottom:1px solid #191D23; text-decoration:none;")}>
+              <div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>{n.ticker}</span><span>{n.time}</span><span style={css("color:#8A929E;")}>{n.source}</span></div>
+              <div style={css("font-size:12.5px; line-height:1.4; color:#DDE1E7;")}>{n.title}</div>
+            </a>
+          ))}
         </div>
         <div style={css("border-top:1px solid #23272E;")}>
           <div style={css("padding:11px 14px 8px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Triggered alerts</span></div>
@@ -820,21 +921,20 @@ export default function Terminal() {
         <div>
           <div style={css("border:1px solid #23272E; border-radius:12px; overflow:hidden; background:#101317;")}>
             <div style={css("height:170px; background:repeating-linear-gradient(135deg,#171B21,#171B21 11px,#1B2027 11px,#1B2027 22px); display:flex; align-items:flex-end; padding:16px;")}><span className="mono" style={css("font-size:11px; color:#4E5661;")}>[ lead image — Equinor Q2 ]</span></div>
-            <div style={css("padding:18px 20px;")}>
-              <div className="mono" style={css("display:flex; gap:9px; font-size:11px; color:#5B626C; margin-bottom:8px;")}><span style={css("color:#6FA8FF;")}>EQNR</span><span>Reuters</span><span>14:21 · today</span></div>
-              <div style={css("font-size:18px; font-weight:600; line-height:1.35; color:#F2F4F7;")}>Equinor lifts quarterly dividend and unveils $1.2bn buyback as cash flow beats</div>
-              <p style={css("font-size:13.5px; line-height:1.55; color:#9AA1AC; margin:10px 0 0;")}>The Norwegian energy major raised its ordinary dividend to $0.37 per share and launched a fresh buyback tranche, citing resilient gas prices and lower capex guidance for the second half.</p>
-            </div>
+            <a href={feedItems[0]?.link || undefined} target="_blank" rel="noreferrer" style={css("display:block; padding:18px 20px; text-decoration:none;")}>
+              <div className="mono" style={css("display:flex; gap:9px; font-size:11px; color:#5B626C; margin-bottom:8px;")}><span style={css("color:#6FA8FF;")}>{feedItems[0]?.ticker || 'EQNR'}</span><span>{feedItems[0]?.source || 'Reuters'}</span><span>{feedItems[0]?.time || '14:21'}</span></div>
+              <div style={css("font-size:18px; font-weight:600; line-height:1.35; color:#F2F4F7;")}>{feedItems[0]?.title || 'Equinor lifts quarterly dividend and unveils $1.2bn buyback as cash flow beats'}</div>
+            </a>
           </div>
           <div style={css("margin-top:16px; border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            {newsList.map((n, i) => (<React.Fragment key={i}>
-              <div style={css("display:flex; gap:14px; padding:14px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+            {feedItems.slice(1, 8).map((n, i) => (<React.Fragment key={i}>
+              <a href={n.link || undefined} target="_blank" rel="noreferrer" style={css("display:flex; gap:14px; padding:14px 18px; border-bottom:1px solid #191D23; cursor:pointer; text-decoration:none;")} className="hov-b">
                 <div style={css("width:64px; height:52px; border-radius:7px; background:repeating-linear-gradient(135deg,#171B21,#171B21 7px,#1B2027 7px,#1B2027 14px); flex:0 0 auto;")}></div>
                 <div style={css("min-width:0;")}>
                   <div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>{n.ticker}</span><span>{n.source}</span><span>{n.time}</span></div>
                   <div style={css("font-size:13.5px; line-height:1.4; color:#DDE1E7; font-weight:500;")}>{n.title}</div>
                 </div>
-              </div>
+              </a>
             </React.Fragment>))}
           </div>
         </div>
@@ -1400,9 +1500,9 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:12px;")}>Reference rates</div>
             <div className="m-grid3" style={css("display:grid; grid-template-columns:repeat(3,1fr); gap:12px;")}>
-              <div style={css("border:1px solid #23272E; border-radius:9px; padding:12px 13px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>USD/NOK</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>10.612</div><div className="mono" style={css("font-size:11px; color:#E4655E; margin-top:2px;")}>−0.18% · 1d</div></div>
-              <div style={css("border:1px solid #23272E; border-radius:9px; padding:12px 13px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>EUR/NOK</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>11.481</div><div className="mono" style={css("font-size:11px; color:#E4655E; margin-top:2px;")}>−0.09% · 1d</div></div>
-              <div style={css("border:1px solid #23272E; border-radius:9px; padding:12px 13px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>GBP/NOK</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>13.540</div><div className="mono" style={css("font-size:11px; color:#3DBB84; margin-top:2px;")}>+0.12% · 1d</div></div>
+              {fxRates.map((r, i) => (
+                <div key={i} style={css("border:1px solid #23272E; border-radius:9px; padding:12px 13px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>{r.label}</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>{r.value ?? '—'}</div><div className="mono" style={css(`font-size:11px; color:${r.chgPct == null ? '#5B626C' : pctColor(r.chgPct)}; margin-top:2px;`)}>{r.chgPct == null ? '· 1d' : `${pctText(r.chgPct)} · 1d`}</div></div>
+              ))}
             </div>
           </div>
           
@@ -1657,9 +1757,9 @@ export default function Terminal() {
         <line x1="0" y1="60" x2="660" y2="60" stroke="#20242B" strokeWidth="1"/>
         <line x1="0" y1="120" x2="660" y2="120" stroke="#20242B" strokeWidth="1"/>
         <line x1="0" y1="180" x2="660" y2="180" stroke="#20242B" strokeWidth="1"/>
-        <path d="M0,180 L44,172 L88,186 L132,150 L176,162 L220,128 L264,140 L308,104 L352,120 L396,88 L440,102 L484,66 L528,80 L572,52 L616,62 L660,38 L660,240 L0,240 Z" fill="url(#dtgrad)"/>
-        <polyline points="0,180 44,172 88,186 132,150 176,162 220,128 264,140 308,104 352,120 396,88 440,102 484,66 528,80 572,52 616,62 660,38" fill="none" stroke="#3DBB84" strokeWidth="2.2"/>
-        <circle cx="660" cy="38" r="4" fill="#3DBB84"/>
+        <path d={detailPath ? detailPath.area : "M0,180 L44,172 L88,186 L132,150 L176,162 L220,128 L264,140 L308,104 L352,120 L396,88 L440,102 L484,66 L528,80 L572,52 L616,62 L660,38 L660,240 L0,240 Z"} fill="url(#dtgrad)"/>
+        <polyline points={detailPath ? detailPath.line : "0,180 44,172 88,186 132,150 176,162 220,128 264,140 308,104 352,120 396,88 440,102 484,66 528,80 572,52 616,62 660,38"} fill="none" stroke={detailPath && !detailPath.up ? '#E4655E' : '#3DBB84'} strokeWidth="2.2"/>
+        {!detailPath && <circle cx="660" cy="38" r="4" fill="#3DBB84"/>}
       </svg>
     </div>
     <div style={css("padding:12px 26px 6px;")}>
@@ -1713,9 +1813,9 @@ export default function Terminal() {
     <div style={css("padding:18px 26px;")}>
       <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Latest news</span>
       <div style={css("margin-top:12px; display:flex; flex-direction:column; gap:2px;")}>
-        <div style={css("padding:12px 0; border-bottom:1px solid #191D23;")}><div style={css("font-size:13.5px; color:#DDE1E7; line-height:1.4; font-weight:500;")}>Equinor lifts quarterly dividend, unveils $1.2bn buyback</div><div className="mono" style={css("font-size:11px; color:#5B626C; margin-top:5px;")}>Reuters · 14:21</div></div>
-        <div style={css("padding:12px 0; border-bottom:1px solid #191D23;")}><div style={css("font-size:13.5px; color:#DDE1E7; line-height:1.4; font-weight:500;")}>DNB Markets raises Equinor target to 340 NOK</div><div className="mono" style={css("font-size:11px; color:#5B626C; margin-top:5px;")}>E24 · 11:05</div></div>
-        <div style={css("padding:12px 0;")}><div style={css("font-size:13.5px; color:#DDE1E7; line-height:1.4; font-weight:500;")}>Johan Castberg field starts production ahead of schedule</div><div className="mono" style={css("font-size:11px; color:#5B626C; margin-top:5px;")}>Bloomberg · Yesterday</div></div>
+        {sdNews.map((n, i) => (
+          <a key={i} href={n.link || undefined} target="_blank" rel="noreferrer" style={css(`display:block; padding:12px 0; ${i < sdNews.length - 1 ? 'border-bottom:1px solid #191D23;' : ''} text-decoration:none;`)}><div style={css("font-size:13.5px; color:#DDE1E7; line-height:1.4; font-weight:500;")}>{n.title}</div><div className="mono" style={css("font-size:11px; color:#5B626C; margin-top:5px;")}>{n.meta}</div></a>
+        ))}
       </div>
     </div>
   </div>
