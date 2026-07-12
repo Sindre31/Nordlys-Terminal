@@ -8,7 +8,9 @@ import {
   useNews,
   useChart,
   useOsloClock,
+  computePortfolio,
   buildChartPath,
+  type Position,
   fmtPrice,
   fmtFx,
   fmtNum,
@@ -373,6 +375,32 @@ export default function Terminal() {
 
   const order = ['EQNR', 'DNB', 'TEL', 'NHY', 'MOWI', 'YAR', 'AKRBP', 'KOG', 'SALM'];
 
+  // ---- Live-valued AI portfolio (share positions priced at live quotes) ----
+  const POSITIONS: Position[] = [
+    { ticker: 'EQNR', qty: 617, theme: 'Energy', fallbackNok: 192675 },
+    { ticker: 'KOG', qty: 142, theme: 'Defence', fallbackNok: 154140 },
+    { ticker: 'LMT', qty: 21, theme: 'Defence', fallbackNok: 115605 },
+    { ticker: 'XOM', qty: 82, theme: 'Energy', fallbackNok: 102760 },
+    { ticker: 'AKRBP', qty: 397, theme: 'Energy', fallbackNok: 102760 },
+    { ticker: 'NHY', qty: 1864, theme: 'Materials', fallbackNok: 128450 },
+    { ticker: 'GLOBAL', qty: 0, theme: 'Global funds', fallbackNok: 141295 },
+    { ticker: 'NVDA', qty: 42, theme: 'Tech', fallbackNok: 77070 },
+    { ticker: 'YAR', qty: 225, theme: 'Materials', fallbackNok: 77070 },
+    { ticker: 'MOWI', qty: 595, theme: 'Seafood', fallbackNok: 115605 },
+  ];
+  const CASH_NOK = 83492;
+  const THEME_COLORS: Record<string, string> = {
+    Energy: '#3DBB84',
+    Defence: '#7C5CFF',
+    'Global funds': '#2F6E90',
+    Materials: '#C79A3D',
+    Tech: '#4E9E8A',
+    Seafood: '#B85C54',
+    Cash: '#3A414B',
+  };
+  const port = computePortfolio(live, POSITIONS, CASH_NOK);
+  const sinceIncStr = (port.sinceInception >= 0 ? '+' : '') + port.sinceInception.toFixed(1) + '%';
+
   const watchlist = order.map((sym) => ({
     ticker: sym,
     name: S[sym].name,
@@ -443,7 +471,15 @@ export default function Terminal() {
     { ticker: 'NVDA', name: 'NVIDIA', type: 'Share · NASDAQ · Tech', alloc: '6.0%', value: '77 070', chg: 1.88, conv: 'Medium', driver: 'Rate-cut + AI capex', ask: false },
     { ticker: 'YAR', name: 'Yara International', type: 'Share · Oslo Børs · Materials', alloc: '6.0%', value: '77 070', chg: 0.88, conv: 'Medium', driver: 'Grain-disruption hedge', ask: true },
     { ticker: 'MOWI', name: 'Mowi', type: 'Share · Oslo Børs · Seafood', alloc: '9.0%', value: '115 605', chg: -1.15, conv: 'Trim', driver: 'Spot price weakness', ask: true },
-  ].map((h) => ({ ...h, chgEl: chgEl(liveChg(h.ticker, h.chg), 12.5), convEl: convBadge(h.conv), askEl: askTag(h.ask), open: S[h.ticker] ? open(h.ticker) : undefined }));
+  ].map((h) => ({
+    ...h,
+    alloc: port.allocOf(h.ticker).toFixed(1) + '%',
+    value: fmtNum(port.valueOf(h.ticker), 0),
+    chgEl: chgEl(liveChg(h.ticker, h.chg), 12.5),
+    convEl: convBadge(h.conv),
+    askEl: askTag(h.ask),
+    open: S[h.ticker] ? open(h.ticker) : undefined,
+  }));
 
   const aiSignals = [
     { cat: 'US Politics', source: 'Reuters', sent: 'Watch', text: 'Trump floats 25% tariff on European aluminium imports at rally', tickers: 'NHY · YAR', time: '13:52' },
@@ -466,13 +502,27 @@ export default function Terminal() {
   ].map((a) => ({ ...a, dotEl: dot(a.dir) }));
 
   const aiRecos = [
-    { ticker: 'KOG', name: 'Kongsberg Gruppen', act: 'BUY', nowTarget: '1 084 → 1 240', up: 14.4, ask: true, reason: 'Add on European defence-budget upcycle; durable order book.' },
-    { ticker: 'AKRBP', name: 'Aker BP', act: 'BUY', nowTarget: '258.9 → 285', up: 10.1, ask: true, reason: 'High-beta crude play while shipping-risk premium persists.' },
-    { ticker: 'LMT', name: 'Lockheed Martin', act: 'BUY', nowTarget: '$512 → $560', up: 9.3, ask: false, reason: 'US defence budget upcycle; diversifies the defence theme.' },
-    { ticker: 'MOWI', name: 'Mowi', act: 'TRIM', nowTarget: '194.3 → 188', up: -3.2, ask: true, reason: 'Reduce on third weekly salmon-price drop and Q3 margin risk.' },
-    { ticker: 'NHY', name: 'Norsk Hydro', act: 'HOLD', nowTarget: '68.9 → 72', up: 4.5, ask: true, reason: 'Hold pending Trump aluminium-tariff decision (binary risk).' },
-    { ticker: 'SALM', name: 'SalMar', act: 'SELL', nowTarget: '612.5 → exit', up: -4.9, ask: true, reason: 'Exit residual seafood beta; redeploy into defence.' },
-  ].map((rc) => ({ ...rc, actEl: actBadge(rc.act), upsideEl: upside(rc.up), askEl: askTag(rc.ask), open: S[rc.ticker] ? open(rc.ticker) : undefined }));
+    { ticker: 'KOG', name: 'Kongsberg Gruppen', act: 'BUY', prefix: '', target: 1240, targetLabel: '1 240', up: 14.4, ask: true, reason: 'Add on European defence-budget upcycle; durable order book.' },
+    { ticker: 'AKRBP', name: 'Aker BP', act: 'BUY', prefix: '', target: 285, targetLabel: '285', up: 10.1, ask: true, reason: 'High-beta crude play while shipping-risk premium persists.' },
+    { ticker: 'LMT', name: 'Lockheed Martin', act: 'BUY', prefix: '$', target: 560, targetLabel: '$560', up: 9.3, ask: false, reason: 'US defence budget upcycle; diversifies the defence theme.' },
+    { ticker: 'MOWI', name: 'Mowi', act: 'TRIM', prefix: '', target: 188, targetLabel: '188', up: -3.2, ask: true, reason: 'Reduce on third weekly salmon-price drop and Q3 margin risk.' },
+    { ticker: 'NHY', name: 'Norsk Hydro', act: 'HOLD', prefix: '', target: 72, targetLabel: '72', up: 4.5, ask: true, reason: 'Hold pending Trump aluminium-tariff decision (binary risk).' },
+    { ticker: 'SALM', name: 'SalMar', act: 'SELL', prefix: '', target: null as number | null, targetLabel: 'exit', up: -4.9, ask: true, reason: 'Exit residual seafood beta; redeploy into defence.' },
+  ].map((rc) => {
+    const y = STOCK_YAHOO[rc.ticker];
+    const q = y ? live[y] : undefined;
+    const now = q ? q.price : null;
+    const nowStr = now != null ? rc.prefix + (now >= 500 ? fmtNum(now, 0) : fmtNum(now, 1)) : '—';
+    const up = rc.target != null && now ? ((rc.target - now) / now) * 100 : rc.up;
+    return {
+      ...rc,
+      nowTarget: `${nowStr} → ${rc.targetLabel}`,
+      actEl: actBadge(rc.act),
+      upsideEl: upside(up),
+      askEl: askTag(rc.ask),
+      open: S[rc.ticker] ? open(rc.ticker) : undefined,
+    };
+  });
 
   const portfolioLog = [
     { date: '08 Jul', side: 'BUY', ticker: 'KOG', name: 'Kongsberg', qty: '+140', price: '1 081.0', account: 'Aksjesparekonto' },
@@ -1090,7 +1140,7 @@ export default function Terminal() {
         <div style={css("display:flex; flex-direction:column; align-items:flex-end; gap:8px;")}>
           <button style={css("border:none; background:linear-gradient(135deg,#7C5CFF,#4B33C7); color:#fff; font-size:12.5px; font-weight:500; padding:9px 16px; border-radius:8px; cursor:pointer; font-family:inherit;")}>↻ Rebalance now</button>
           <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11px; color:#5B626C;")}>
-            <span>Last run 14:05 CET</span>
+            <span>Last run {clock.time}</span>
             <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:7px;height:7px;border-radius:50%;background:#3DBB84;box-shadow:0 0 0 3px rgba(14,138,95,0.18);")}></span>Nordnet · live prices</span>
           </div>
         </div>
@@ -1109,8 +1159,8 @@ export default function Terminal() {
 
       
       <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Portfolio value</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>NOK 1 284 500</div><div className="mono" style={css("font-size:12px; color:#3DBB84; margin-top:3px;")}>+18.4% since inception</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Today</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+11 240</div><div className="mono" style={css("font-size:12px; color:#3DBB84; margin-top:3px;")}>+0.88%</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Portfolio value</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>NOK {fmtNum(port.totalValue, 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.sinceInception)}; margin-top:3px;`)}>{sinceIncStr} since inception</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Today</div><div className="mono" style={css(`font-size:23px; font-weight:600; color:${pctColor(port.totalToday)}; margin-top:5px;`)}>{port.totalToday >= 0 ? '+' : '−'}{fmtNum(Math.abs(port.totalToday), 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.todayPct)}; margin-top:3px;`)}>{pctText(port.todayPct)}</div></div>
         <div onClick={toggleConv} style={css("border:1px solid #3B2F63; border-radius:12px; background:#141026; padding:15px 17px; cursor:pointer;")} className="hov-c"><div style={css("display:flex; align-items:center; gap:6px;")}><span style={css("font-size:11.5px; color:#7C8492;")}>AI conviction</span><span className="mono" style={css("margin-left:auto; font-size:10px; color:#B79BFF;")}>{convToggleLabel}</span></div><div className="mono" style={css("font-size:23px; font-weight:600; color:#B79BFF; margin-top:5px;")}>{convScore}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>{convTilt}</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Cash / next rebalance</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{cashPct}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>Auto · daily 08:00 &amp; on breaking signal</div></div>
       </div>
@@ -1180,7 +1230,7 @@ export default function Terminal() {
               </div>
             </div>
             <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:8px;")}>
-              <span className="mono" style={css("font-size:22px; font-weight:600; color:#F2F4F7;")}>+18.4%</span>
+              <span className="mono" style={css("font-size:22px; font-weight:600; color:#F2F4F7;")}>{sinceIncStr}</span>
               <span className="mono" style={css("font-size:12px; color:#3DBB84;")}>vs OSEBX +11.6% · since Jan 2026</span>
             </div>
             <svg viewBox="0 0 720 210" preserveAspectRatio="none" style={css("width:100%; height:200px; display:block;")}>
@@ -1240,20 +1290,14 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <div style={css("display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Current allocation</span><span className="mono" style={css("font-size:11px; color:#5B626C;")}>by theme</span></div>
             <div style={css("display:flex; height:14px; border-radius:6px; overflow:hidden; gap:2px;")}>
-              <div style={css("width:34%; background:#3DBB84;")}></div>
-              <div style={css("width:22%; background:#7C5CFF;")}></div>
-              <div style={css("width:16%; background:#2F6E90;")}></div>
-              <div style={css("width:12%; background:#C79A3D;")}></div>
-              <div style={css("width:9.5%; background:#B85C54;")}></div>
-              <div style={css("width:6.5%; background:#3A414B;")}></div>
+              {port.themeAlloc.map((t, i) => (
+                <div key={i} style={css(`width:${t.pct}%; background:${THEME_COLORS[t.label] || '#3A414B'};`)}></div>
+              ))}
             </div>
             <div className="mono" style={css("display:flex; flex-wrap:wrap; gap:14px; margin-top:12px; font-size:11.5px; color:#9AA1AC;")}>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#3DBB84;")}></span>Energy 34%</span>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#7C5CFF;")}></span>Defence 22%</span>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#2F6E90;")}></span>Global funds 16%</span>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#C79A3D;")}></span>Materials 12%</span>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#B85C54;")}></span>Seafood 9.5%</span>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#3A414B;")}></span>Cash 6.5%</span>
+              {port.themeAlloc.map((t, i) => (
+                <span key={i} style={css("display:flex; align-items:center; gap:6px;")}><span style={css(`width:9px;height:9px;border-radius:2px;background:${THEME_COLORS[t.label] || '#3A414B'};`)}></span>{t.label} {t.pct.toFixed(1)}%</span>
+              ))}
             </div>
           </div>
           
@@ -1367,7 +1411,7 @@ export default function Terminal() {
     <div data-screen-label="Risk" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Risk &amp; exposure</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio · NOK 1 284 500 · as of 14:32 CET</span>
+        <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio · NOK {fmtNum(port.totalValue, 0)} · as of {clock.time}</span>
       </div>
 
       
@@ -1469,7 +1513,7 @@ export default function Terminal() {
     <div data-screen-label="Currency" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Currency exposure</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio · reporting currency NOK · as of 14:32 CET</span>
+        <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio · reporting currency NOK · as of {clock.time}</span>
       </div>
 
       

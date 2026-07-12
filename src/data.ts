@@ -239,6 +239,91 @@ export function useChart(symbol: string | null, range: string): number[] {
   return closes;
 }
 
+// ---- Portfolio valuation -----------------------------------------------------
+
+export interface Position {
+  ticker: string;
+  qty: number; // shares held (0 for funds with no live price)
+  theme: string;
+  fallbackNok: number; // designed NOK value, used when no live price is available
+}
+
+export interface PortfolioRow {
+  ticker: string;
+  theme: string;
+  valueNok: number;
+  todayNok: number;
+  chgPct: number;
+  costNok: number;
+}
+
+export interface Portfolio {
+  rows: PortfolioRow[];
+  totalValue: number;
+  totalToday: number;
+  todayPct: number;
+  sinceInception: number;
+  cashNok: number;
+  cashPct: number;
+  usdnok: number;
+  themeAlloc: { label: string; valueNok: number; pct: number }[];
+  allocOf: (ticker: string) => number;
+  valueOf: (ticker: string) => number;
+}
+
+// Values positions at live prices (USD holdings converted via USD/NOK), and
+// derives totals, today's P&L, since-inception return and theme allocation.
+// Cost basis is inferred so the designed prices reproduce ~+18.4% since start.
+export function computePortfolio(live: QuoteMap, positions: Position[], cashNok: number): Portfolio {
+  const usdnok = live['USDNOK=X']?.price ?? 10.61;
+  const quoteOf = (t: string): Quote | undefined => {
+    const y = STOCK_YAHOO[t];
+    return y ? live[y] : undefined;
+  };
+  const priceNok = (t: string): number | null => {
+    const q = quoteOf(t);
+    if (!q) return null;
+    return q.currency === 'USD' ? q.price * usdnok : q.price;
+  };
+  const rows: PortfolioRow[] = positions.map((p) => {
+    const pn = priceNok(p.ticker);
+    const valueNok = p.qty > 0 && pn != null ? p.qty * pn : p.fallbackNok;
+    const chgPct = quoteOf(p.ticker)?.changePct ?? 0;
+    const todayNok = (valueNok * chgPct) / 100;
+    const costNok = p.fallbackNok / 1.184;
+    return { ticker: p.ticker, theme: p.theme, valueNok, todayNok, chgPct, costNok };
+  });
+  const holdingsValue = rows.reduce((s, r) => s + r.valueNok, 0);
+  const totalValue = holdingsValue + cashNok;
+  const totalToday = rows.reduce((s, r) => s + r.todayNok, 0);
+  const totalCost = rows.reduce((s, r) => s + r.costNok, 0) + cashNok;
+  const prevTotal = totalValue - totalToday;
+  const todayPct = prevTotal > 0 ? (totalToday / prevTotal) * 100 : 0;
+  const sinceInception = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
+
+  const themeMap = new Map<string, number>();
+  for (const r of rows) themeMap.set(r.theme, (themeMap.get(r.theme) || 0) + r.valueNok);
+  themeMap.set('Cash', cashNok);
+  const themeAlloc = [...themeMap.entries()]
+    .map(([label, v]) => ({ label, valueNok: v, pct: totalValue > 0 ? (v / totalValue) * 100 : 0 }))
+    .sort((a, b) => b.valueNok - a.valueNok);
+
+  const rowFor = (t: string) => rows.find((r) => r.ticker === t);
+  return {
+    rows,
+    totalValue,
+    totalToday,
+    todayPct,
+    sinceInception,
+    cashNok,
+    cashPct: totalValue > 0 ? (cashNok / totalValue) * 100 : 0,
+    usdnok,
+    themeAlloc,
+    allocOf: (t) => (totalValue > 0 ? ((rowFor(t)?.valueNok ?? 0) / totalValue) * 100 : 0),
+    valueOf: (t) => rowFor(t)?.valueNok ?? 0,
+  };
+}
+
 // Live wall clock (Oslo), ticking once a minute.
 export function useOsloClock(): { time: string; open: boolean } {
   const [c, setC] = useState(osloClock());
