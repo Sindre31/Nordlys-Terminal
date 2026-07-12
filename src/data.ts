@@ -324,6 +324,94 @@ export function computePortfolio(live: QuoteMap, positions: Position[], cashNok:
   };
 }
 
+export interface DividendInfo {
+  latest: number | null;
+  latestDate: number | null;
+  trailing: number;
+  currency: string;
+}
+export interface SummaryInfo {
+  targetMean: number | null;
+  targetHigh: number | null;
+  targetLow: number | null;
+  recMean: number | null;
+  recKey: string | null;
+  numAnalysts: number | null;
+  buy: number;
+  hold: number;
+  sell: number;
+  earningsDate: number | null;
+}
+export interface InsiderTrade {
+  id: number;
+  ticker: string;
+  company: string;
+  title: string;
+  date: string;
+  side: string;
+  link: string;
+}
+
+export function useDividends(symbols: string[], intervalMs = 3600000): Record<string, DividendInfo> {
+  const [divs, setDivs] = useState<Record<string, DividendInfo>>({});
+  const key = symbols.join(',');
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const j = (await getJSON(`/api/dividends?symbols=${encodeURIComponent(key)}`)) as
+        | { dividends?: Record<string, DividendInfo> }
+        | null;
+      if (alive && j && j.dividends) setDivs(j.dividends);
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [key, intervalMs]);
+  return divs;
+}
+
+export function useSummary(symbols: string[], intervalMs = 900000): Record<string, SummaryInfo> {
+  const [sum, setSum] = useState<Record<string, SummaryInfo>>({});
+  const key = symbols.join(',');
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const j = (await getJSON(`/api/summary?symbols=${encodeURIComponent(key)}`)) as
+        | { summary?: Record<string, SummaryInfo> }
+        | null;
+      if (alive && j && j.summary) setSum(j.summary);
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [key, intervalMs]);
+  return sum;
+}
+
+export function useInsider(intervalMs = 600000): InsiderTrade[] {
+  const [trades, setTrades] = useState<InsiderTrade[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const j = (await getJSON('/api/insider?limit=14')) as { trades?: InsiderTrade[] } | null;
+      if (alive && j && Array.isArray(j.trades)) setTrades(j.trades);
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [intervalMs]);
+  return trades;
+}
+
+// Format a unix-seconds earnings/ex date as {day, mon} and a short label.
+export function fmtDayMon(unixSeconds: number | null): { day: string; mon: string; label: string } {
+  if (!unixSeconds) return { day: '', mon: '', label: '' };
+  const d = new Date(unixSeconds * 1000);
+  const day = String(d.getDate()).padStart(2, '0');
+  const mon = d.toLocaleDateString('en-GB', { month: 'short' });
+  return { day, mon, label: `${day} ${mon}` };
+}
+
 // Official macro figures (Norges Bank policy rate). Null until loaded.
 export function useMacro(intervalMs = 3600000): { policyRate: number | null } {
   const [macro, setMacro] = useState<{ policyRate: number | null }>({ policyRate: null });
