@@ -420,6 +420,10 @@ export default function Terminal() {
     Seafood: '#B85C54',
     Cash: '#3A414B',
   };
+  const CCY: Record<string, 'NOK' | 'USD' | 'Mixed'> = {
+    EQNR: 'NOK', KOG: 'NOK', AKRBP: 'NOK', NHY: 'NOK', YAR: 'NOK', MOWI: 'NOK', DNB: 'NOK',
+    LMT: 'USD', XOM: 'USD', NVDA: 'USD', GLOBAL: 'Mixed',
+  };
   const port = computePortfolio(live, POSITIONS, CASH_NOK);
   const sinceIncStr = (port.sinceInception >= 0 ? '+' : '') + port.sinceInception.toFixed(1) + '%';
   // Weight pairs (fraction of total portfolio value) for the real risk engine.
@@ -596,38 +600,74 @@ export default function Terminal() {
   const segBase = 'padding:5px 13px; border-radius:6px; font-size:12px; cursor:pointer; color:#8A929E;';
   const segOn = 'padding:5px 13px; border-radius:6px; font-size:12px; cursor:pointer; color:#fff; background:linear-gradient(135deg,#7C5CFF,#4B33C7);';
 
+  // ---- Attribution (real, from the history engine; 1y trailing) ----
+  const attrLive = riskStats.portReturn != null && Object.keys(riskStats.holdingReturns).length > 0;
+  const attrTotal = attrLive ? (riskStats.portReturn as number) : 18.4;
+  const attrBench = attrLive ? (riskStats.benchReturn as number) : 11.6;
+  const attrActive = attrTotal - attrBench;
+  // Per-holding contribution = weight × holding return (percentage points).
+  const contribRaw = POSITIONS.map((p) => {
+    const y = STOCK_YAHOO[p.ticker];
+    const ret = y ? riskStats.holdingReturns[y] : undefined;
+    const w = port.totalValue > 0 ? port.valueOf(p.ticker) / port.totalValue : 0;
+    return ret != null ? { ticker: p.ticker, theme: p.theme, v: (w * ret) } : null;
+  }).filter(Boolean) as { ticker: string; theme: string; v: number }[];
+
+  const contribBase = attrLive && contribRaw.length
+    ? [...contribRaw].sort((a, b) => b.v - a.v)
+    : [
+        { ticker: 'KOG', theme: 'Defence', v: 2.9 }, { ticker: 'EQNR', theme: 'Energy', v: 2.1 }, { ticker: 'NHY', theme: 'Materials', v: 1.6 }, { ticker: 'LMT', theme: 'Defence', v: 1.2 },
+        { ticker: 'AKRBP', theme: 'Energy', v: 1.1 }, { ticker: 'NVDA', theme: 'Tech', v: 0.9 }, { ticker: 'XOM', theme: 'Energy', v: 0.6 }, { ticker: 'YAR', theme: 'Materials', v: 0.4 },
+        { ticker: 'GLOBAL', theme: 'Global funds', v: 0.3 }, { ticker: 'MOWI', theme: 'Seafood', v: -1.1 },
+      ];
+  const contribMax = Math.max(3, ...contribBase.map((h) => Math.abs(h.v)));
+  const contribHoldings = contribBase.map((h) => ({ ...h, barEl: contribBar(h.v, contribMax), valEl: ppVal(h.v), open: S[h.ticker] ? open(h.ticker) : undefined }));
+  const topContrib = contribHoldings[0];
+  const ppStr = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+  const attrTotalStr = ppStr(attrTotal);
+  const attrBenchStr = ppStr(attrBench);
+  const attrActiveStr = ppStr(attrActive);
+  const topContribStr = topContrib ? (topContrib.v >= 0 ? '+' : '') + topContrib.v.toFixed(1) + ' pp' : '+2.9 pp';
+
+  const themeMap = new Map<string, number>();
+  (attrLive ? contribRaw : []).forEach((c) => themeMap.set(c.theme, (themeMap.get(c.theme) || 0) + c.v));
+  const contribThemes = (attrLive && themeMap.size
+    ? [...themeMap.entries()].map(([label, v]) => ({ label, v })).sort((a, b) => b.v - a.v)
+    : [
+        { label: 'Energy', v: 3.8 }, { label: 'Defence', v: 4.1 }, { label: 'Materials', v: 2.0 },
+        { label: 'Tech', v: 1.2 }, { label: 'Global fund', v: 0.3 }, { label: 'Seafood', v: -1.1 },
+      ]
+  ).map((t) => ({ ...t, barEl: contribBar(t.v, 4.5), valEl: ppVal(t.v) }));
+
+  // Modeled Brinson split, rescaled to sum to the real active return.
+  const attrFactor = attrLive ? attrActive / 6.8 : 1;
   const attrEffects = [
     { label: 'Allocation effect', v: 2.6 },
     { label: 'Selection effect', v: 3.4 },
     { label: 'FX effect', v: 1.2 },
     { label: 'Timing / rebalance', v: 0.4 },
     { label: 'Costs & fees', v: -0.8 },
-  ].map((e) => ({ ...e, barEl: contribBar(e.v, 4), valEl: ppVal(e.v) }));
-
-  const contribHoldings = [
-    { ticker: 'KOG', v: 2.9 }, { ticker: 'EQNR', v: 2.1 }, { ticker: 'NHY', v: 1.6 }, { ticker: 'LMT', v: 1.2 },
-    { ticker: 'AKRBP', v: 1.1 }, { ticker: 'NVDA', v: 0.9 }, { ticker: 'XOM', v: 0.6 }, { ticker: 'YAR', v: 0.4 },
-    { ticker: 'GLOBAL', v: 0.3 }, { ticker: 'MOWI', v: -1.1 },
-  ].map((h) => ({ ...h, barEl: contribBar(h.v, 3), valEl: ppVal(h.v), open: S[h.ticker] ? open(h.ticker) : undefined }));
-
-  const contribThemes = [
-    { label: 'Energy', v: 3.8 }, { label: 'Defence', v: 4.1 }, { label: 'Materials', v: 2.0 },
-    { label: 'Tech', v: 1.2 }, { label: 'Global fund', v: 0.3 }, { label: 'Seafood', v: -1.1 },
-  ].map((t) => ({ ...t, barEl: contribBar(t.v, 4.5), valEl: ppVal(t.v) }));
+  ].map((e) => { const v = e.v * attrFactor; return { ...e, v, barEl: contribBar(v, 4 * Math.max(1, Math.abs(attrFactor))), valEl: ppVal(v) }; });
 
 
-  const fxHoldings = [
-    { ticker: 'EQNR', name: 'Equinor', ccy: 'NOK', weight: '15%', value: '192 675', risk: 'None' },
-    { ticker: 'NHY', name: 'Norsk Hydro', ccy: 'NOK', weight: '10%', value: '128 450', risk: 'None' },
-    { ticker: 'KOG', name: 'Kongsberg Gr.', ccy: 'NOK', weight: '12%', value: '154 140', risk: 'None' },
-    { ticker: 'LMT', name: 'Lockheed Martin', ccy: 'USD', weight: '9%', value: '115 605', risk: 'High' },
-    { ticker: 'XOM', name: 'Exxon Mobil', ccy: 'USD', weight: '8%', value: '102 760', risk: 'High' },
-    { ticker: 'NVDA', name: 'NVIDIA', ccy: 'USD', weight: '6%', value: '77 070', risk: 'High' },
-    { ticker: 'GLOBAL', name: 'Nordnet Global', ccy: 'Mixed', weight: '11%', value: '141 295', risk: 'Medium' },
-    { ticker: 'DNBTEK', name: 'DNB Teknologi', ccy: 'Mixed', weight: '6%', value: '77 070', risk: 'Medium' },
-    { ticker: 'AKRBP', name: 'Aker BP', ccy: 'NOK', weight: '8%', value: '102 760', risk: 'None' },
-    { ticker: 'MOWI', name: 'Mowi', ccy: 'NOK', weight: '9%', value: '115 605', risk: 'None' },
-  ].map((h) => ({ ...h, ccyEl: ccyPill(h.ccy), riskEl: fxRisk(h.risk), open: S[h.ticker] ? open(h.ticker) : undefined }));
+  const fxHoldings = [...port.rows]
+    .sort((a, b) => b.valueNok - a.valueNok)
+    .map((r) => {
+      const ccy = CCY[r.ticker] || 'NOK';
+      const weight = port.totalValue > 0 ? (r.valueNok / port.totalValue) * 100 : 0;
+      const risk = ccy === 'USD' ? 'High' : ccy === 'Mixed' ? 'Medium' : 'None';
+      return {
+        ticker: r.ticker,
+        name: S[r.ticker]?.name || r.ticker,
+        ccy,
+        weight: weight.toFixed(0) + '%',
+        value: fmtNum(r.valueNok, 0),
+        risk,
+        ccyEl: ccyPill(ccy),
+        riskEl: fxRisk(risk),
+        open: S[r.ticker] ? open(r.ticker) : undefined,
+      };
+    });
 
   const divs = [
     { ticker: 'EQNR', ex: '05 Aug', amount: 'NOK 3.90', yield: '4.9%' },
@@ -680,30 +720,29 @@ export default function Terminal() {
       }
     : { date: '', trigType: '', condition: '', reasoning: '', deltaEl: null, actions: [] as { text: string; detail: string; dotEl: React.ReactNode }[] };
 
-  const sectorExp = [
-    { label: 'Energy', val: '31%', pct: 31, color: '#3DBB84' },
-    { label: 'Defence', val: '21%', pct: 21, color: '#7C5CFF' },
-    { label: 'Materials', val: '16%', pct: 16, color: '#C79A3D' },
-    { label: 'Tech', val: '11%', pct: 11, color: '#2F6E90' },
-    { label: 'Global fund', val: '11%', pct: 11, color: '#4E9E8A' },
-    { label: 'Seafood', val: '9%', pct: 9, color: '#B85C54' },
-  ].map((e) => ({ ...e, barEl: hbar(e.pct, e.color) }));
+  // Live sector exposure (from the portfolio's theme allocation, ex-cash).
+  const sectorExp = port.themeAlloc
+    .filter((t) => t.label !== 'Cash')
+    .map((e) => {
+      const color = THEME_COLORS[e.label] || '#6FA8FF';
+      return { label: e.label, val: e.pct.toFixed(0) + '%', pct: e.pct, color, barEl: hbar(e.pct, color) };
+    });
 
-  const concExp = [
-    { label: 'EQNR', val: '15%', pct: 75 },
-    { label: 'KOG', val: '12%', pct: 60 },
-    { label: 'NHY', val: '10%', pct: 50 },
-    { label: 'LMT', val: '9%', pct: 45 },
-    { label: 'MOWI', val: '9%', pct: 45 },
-    { label: 'AKRBP', val: '8%', pct: 40 },
-  ].map((e) => ({ ...e, barEl: hbar(e.pct, '#6FA8FF') }));
+  // Live concentration — top holdings by value.
+  const concSorted = [...port.rows].sort((a, b) => b.valueNok - a.valueNok);
+  const concExp = concSorted.slice(0, 6).map((r) => {
+    const pct = port.totalValue > 0 ? (r.valueNok / port.totalValue) * 100 : 0;
+    const bar = Math.min(pct * 5, 100);
+    return { label: r.ticker, val: pct.toFixed(0) + '%', pct: bar, barEl: hbar(bar, '#6FA8FF') };
+  });
+  const top5Pct = concSorted.slice(0, 5).reduce((s, r) => s + (port.totalValue > 0 ? (r.valueNok / port.totalValue) * 100 : 0), 0);
 
   const scenarios = [
     { name: 'Trump 25% EU metals tariff', how: 'European aluminium exporters de-rate; input-cost noise across materials.', v: -1.8, hit: 'NHY · YAR' },
     { name: 'Mideast ceasefire', how: 'Crude risk premium unwinds; energy and defence give back gains.', v: -2.4, hit: 'EQNR · KOG · XOM' },
     { name: 'Oil +10% supply shock', how: 'Higher crude lifts producers and oil-services leverage.', v: 2.9, hit: 'AKRBP · EQNR · XOM' },
     { name: 'Norges Bank surprise hold', how: 'Rate-cut hopes fade; long-duration growth and funds soften.', v: -0.9, hit: 'NVDA · DNBTEK' },
-    { name: 'Broad risk-off (−5% equities)', how: 'Beta 1.18 amplifies a market-wide drawdown.', v: -5.9, hit: 'All beta' },
+    { name: 'Broad risk-off (−5% equities)', how: 'Portfolio beta amplifies a market-wide drawdown.', v: -5.9, hit: 'All beta' },
     { name: 'US–China trade deal', how: 'Global risk appetite improves; diversified beta rallies.', v: 1.6, hit: 'GLOBAL · NVDA' },
   ].map((sc) => ({ ...sc, impactEl: scImpact(sc.v) }));
 
@@ -896,10 +935,6 @@ export default function Terminal() {
   const rVolNote = riskStats.annVol != null ? (riskStats.annVol > 20 ? 'elevated' : riskStats.annVol > 12 ? 'moderate' : 'low') : 'elevated';
 
   // ---- Currency exposure derived from the live portfolio ----
-  const CCY: Record<string, 'NOK' | 'USD' | 'Mixed'> = {
-    EQNR: 'NOK', KOG: 'NOK', AKRBP: 'NOK', NHY: 'NOK', YAR: 'NOK', MOWI: 'NOK', DNB: 'NOK',
-    LMT: 'USD', XOM: 'USD', NVDA: 'USD', GLOBAL: 'Mixed',
-  };
   const ccyTotals: Record<string, number> = { NOK: port.cashNok, USD: 0, Mixed: 0 };
   port.rows.forEach((r) => {
     const c = CCY[r.ticker] || 'NOK';
@@ -1681,7 +1716,7 @@ export default function Terminal() {
         
         <div style={css("display:flex; flex-direction:column; gap:16px;")}>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:14px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Concentration — top holdings</span><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#C79A3D;")}>Top 5 = 54%</span></div>
+            <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:14px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Concentration — top holdings</span><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#C79A3D;")}>Top 5 = {top5Pct.toFixed(0)}%</span></div>
             {concExp.map((e, i) => (<React.Fragment key={i}>
               <div style={css("display:flex; align-items:center; gap:12px; margin-bottom:11px;")}>
                 <span className="mono" style={css("width:64px; flex:0 0 auto; font-size:12.5px; color:#F2F4F7;")}>{e.label}</span>
@@ -1804,15 +1839,15 @@ export default function Terminal() {
     <div data-screen-label="Attribution" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Performance attribution</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio vs OSEBX · since inception (21 Feb 2026)</span>
+        <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio vs OSEBX · trailing 1 year</span>
       </div>
 
       
       <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Total return</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+18.4%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>portfolio, net</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Benchmark · OSEBX</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#9AA1AC; margin-top:5px;")}>+11.6%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>total return index</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#141026; border-color:#3B2F63; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Active return (alpha)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#B79BFF; margin-top:5px;")}>+6.8%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>Info ratio 0.94</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Top contributor</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>KOG</div><div className="mono" style={css("font-size:11px; color:#3DBB84; margin-top:2px;")}>+2.9 pp</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Total return</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{attrTotalStr}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>portfolio · 1y</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Benchmark · OSEBX</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#9AA1AC; margin-top:5px;")}>{attrBenchStr}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>price index · 1y</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#141026; border-color:#3B2F63; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Active return (alpha)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#B79BFF; margin-top:5px;")}>{attrActiveStr}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>vs OSEBX</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Top contributor</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{topContrib ? topContrib.ticker : 'KOG'}</div><div className="mono" style={css("font-size:11px; color:#3DBB84; margin-top:2px;")}>{topContribStr}</div></div>
       </div>
 
       <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
@@ -1829,7 +1864,7 @@ export default function Terminal() {
           <div style={css("display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:12px; border-top:1px solid #1E1834;")}>
             <span style={css("font-size:12.5px; color:#F2F4F7; font-weight:600;")}>Total active return</span>
             <div style={css("flex:1;")}></div>
-            <span className="mono" style={css("font-size:14px; color:#B79BFF; font-weight:600;")}>+6.8%</span>
+            <span className="mono" style={css("font-size:14px; color:#B79BFF; font-weight:600;")}>{attrActiveStr}</span>
           </div>
         </div>
 

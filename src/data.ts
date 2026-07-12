@@ -351,11 +351,14 @@ export interface RiskStats {
   sharpe: number | null;
   beta: number | null;
   days: number;
+  portReturn: number | null;
+  benchReturn: number | null;
+  holdingReturns: Record<string, number>;
 }
 // Real portfolio risk metrics from 1y price history. `pairs` are
 // "SYMBOL:weight" strings (weight = fraction of total portfolio value).
 export function useRiskStats(pairs: string[], rf: number, intervalMs = 1800000): RiskStats {
-  const [stats, setStats] = useState<RiskStats>({ annVol: null, maxDrawdown: null, var95: null, sharpe: null, beta: null, days: 0 });
+  const [stats, setStats] = useState<RiskStats>({ annVol: null, maxDrawdown: null, var95: null, sharpe: null, beta: null, days: 0, portReturn: null, benchReturn: null, holdingReturns: {} });
   const key = pairs.join(',');
   useEffect(() => {
     if (!key) return;

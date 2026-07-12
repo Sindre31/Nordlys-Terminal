@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     .filter((p) => p.sym && p.w > 0)
     .slice(0, 25);
 
-  const out = { annVol: null, maxDrawdown: null, var95: null, sharpe: null, beta: null, days: 0 };
+  const out = { annVol: null, maxDrawdown: null, var95: null, sharpe: null, beta: null, days: 0, portReturn: null, benchReturn: null, holdingReturns: {} };
   try {
     const uniq = [...new Set([...pairs.map((p) => p.sym), BENCH])];
     const seriesList = await Promise.all(uniq.map(fetchSeries));
@@ -103,12 +103,25 @@ export default async function handler(req, res) {
     }
     const beta = vb > 0 ? cov / vb : null;
 
+    // Benchmark cumulative return + per-holding total return over the window.
+    let bcum = 1;
+    for (const r of benchRets) bcum *= 1 + r;
+    const holdingReturns = {};
+    for (const p of active) {
+      const c0 = series[p.sym].get(ts[0]);
+      const c1 = series[p.sym].get(ts[ts.length - 1]);
+      if (c0 > 0) holdingReturns[p.sym] = (c1 / c0 - 1) * 100;
+    }
+
     out.annVol = annVol * 100;
     out.maxDrawdown = mdd * 100;
     out.var95 = var95 * 100;
     out.sharpe = sharpe;
     out.beta = beta;
     out.days = ts.length;
+    out.portReturn = totalRet * 100;
+    out.benchReturn = (bcum - 1) * 100;
+    out.holdingReturns = holdingReturns;
   } catch {
     /* leave nulls; UI falls back to designed values */
   }
