@@ -1,5 +1,12 @@
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Reliable taps on iOS: no 300ms delay, no double-tap-to-zoom stealing clicks. */
+html {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
 }
 
 html,

@@ -12,6 +12,7 @@ import {
   useDividends,
   useSummary,
   useInsider,
+  useFundamentals,
   fmtDayMon,
   computePortfolio,
   buildChartPath,
@@ -285,9 +286,6 @@ function rating(kind: string) {
 function hbar(pct: number, color: string) {
   return React.createElement('div', { style: { height: '100%', width: pct + '%', background: color, borderRadius: 5 } });
 }
-function swatch(color: string) {
-  return React.createElement('span', { style: { display: 'block', width: 12, height: 12, borderRadius: 3, background: color } });
-}
 function contribBar(v: number, max: number) {
   const up = v >= 0;
   const pct = Math.min((Math.abs(v) / max) * 50, 50);
@@ -351,6 +349,7 @@ export default function Terminal() {
   const dividendSyms = ['EQNR', 'AKRBP', 'KOG', 'XOM'].map((t) => STOCK_YAHOO[t]).filter(Boolean) as string[];
   const dividends = useDividends(dividendSyms);
   const insiderLive = useInsider();
+  const dnbFund = useFundamentals('DNB.OL');
   const marketNews = useNews('OSEBX Oslo Bors Norway stocks');
   const stockNews = useNews(stock ? STOCK_YAHOO[stock] || stock : 'OSEBX Oslo Bors');
   const idxCloses = useChart('OSEBX.OL', '1mo');
@@ -606,12 +605,6 @@ export default function Terminal() {
     { label: 'Tech', v: 1.2 }, { label: 'Global fund', v: 0.3 }, { label: 'Seafood', v: -1.1 },
   ].map((t) => ({ ...t, barEl: contribBar(t.v, 4.5), valEl: ppVal(t.v) }));
 
-  const fxBreakdown = [
-    { label: 'NOK — Norwegian krone', value: 'NOK 771 000', pct: 60, pctLabel: '60%', color: '#3DBB84' },
-    { label: 'USD — US dollar', value: 'NOK 295 000', pct: 23, pctLabel: '23%', color: '#2F6E90' },
-    { label: 'Global fund (basket)', value: 'NOK 141 000', pct: 11, pctLabel: '11%', color: '#7C5CFF' },
-    { label: 'DNB Tek (USD look-through)', value: 'NOK 77 000', pct: 6, pctLabel: '6%', color: '#C79A3D' },
-  ].map((c) => ({ ...c, dotEl: swatch(c.color) }));
 
   const fxHoldings = [
     { ticker: 'EQNR', name: 'Equinor', ccy: 'NOK', weight: '15%', value: '192 675', risk: 'None' },
@@ -869,6 +862,67 @@ export default function Terminal() {
     : null;
   const insiderBuys = insiderLive.filter((t) => t.side === 'BUY').length;
   const insiderSells = insiderLive.filter((t) => t.side === 'SELL').length;
+
+  // ---- Portfolio beta (weighted average of holdings' Yahoo betas) ----
+  let betaNum = 0;
+  let betaW = 0;
+  POSITIONS.forEach((p) => {
+    const s = sumOf(p.ticker);
+    if (s && s.beta != null) {
+      const w = port.allocOf(p.ticker) / 100;
+      betaNum += w * s.beta;
+      betaW += w;
+    }
+  });
+  const portBeta = betaW > 0 ? betaNum / betaW : null;
+
+  // ---- Currency exposure derived from the live portfolio ----
+  const CCY: Record<string, 'NOK' | 'USD' | 'Mixed'> = {
+    EQNR: 'NOK', KOG: 'NOK', AKRBP: 'NOK', NHY: 'NOK', YAR: 'NOK', MOWI: 'NOK', DNB: 'NOK',
+    LMT: 'USD', XOM: 'USD', NVDA: 'USD', GLOBAL: 'Mixed',
+  };
+  const ccyTotals: Record<string, number> = { NOK: port.cashNok, USD: 0, Mixed: 0 };
+  port.rows.forEach((r) => {
+    const c = CCY[r.ticker] || 'NOK';
+    ccyTotals[c] += r.valueNok;
+  });
+  const totV = port.totalValue || 1;
+  const usdPct = (ccyTotals.USD / totV) * 100;
+  const mixedPct = (ccyTotals.Mixed / totV) * 100;
+  const foreignPct = ((ccyTotals.USD + ccyTotals.Mixed) / totV) * 100;
+  const nokPct = (ccyTotals.NOK / totV) * 100;
+  const fxCurrencyRows = [
+    { label: 'NOK — Norwegian krone', value: ccyTotals.NOK, pct: nokPct, color: '#3DBB84' },
+    { label: 'USD — US dollar', value: ccyTotals.USD, pct: usdPct, color: '#2F6E90' },
+    { label: 'Global fund (basket)', value: ccyTotals.Mixed, pct: mixedPct, color: '#7C5CFF' },
+  ].filter((r) => r.value > 0);
+
+  // ---- Featured report card (Yahoo fundamentals) ----
+  const fmtBn = (v: number | null, cur = 'NOK') => {
+    if (v == null) return '—';
+    const pfx = cur === 'USD' ? '$' : 'NOK ';
+    if (Math.abs(v) >= 1e9) return pfx + (v / 1e9).toFixed(1) + 'bn';
+    if (Math.abs(v) >= 1e6) return pfx + (v / 1e6).toFixed(0) + 'm';
+    return pfx + fmtNum(v, 0);
+  };
+  const rcCur = dnbFund?.currency || 'NOK';
+  const rcRev = dnbFund ? fmtBn(dnbFund.revenue, rcCur) : 'NOK 16.1bn';
+  const rcNI = dnbFund ? fmtBn(dnbFund.netIncome, rcCur) : 'NOK 9.4bn';
+  const rcEps = dnbFund && dnbFund.eps != null ? dnbFund.eps.toFixed(2) : '6.02';
+  const rcRoe = dnbFund && dnbFund.roe != null ? (dnbFund.roe * 100).toFixed(1) + '%' : '14.2%';
+  const rcBeat = dnbFund ? dnbFund.beat : true;
+  const revTrend = dnbFund?.revenueTrend?.length ? dnbFund.revenueTrend.slice(-8) : null;
+  const revBars = revTrend
+    ? (() => {
+        const max = Math.max(...revTrend);
+        const n = revTrend.length;
+        const slot = 420 / n;
+        return revTrend.map((v, i) => {
+          const h = Math.max(6, (v / max) * 76);
+          return { x: i * slot + 3, y: 90 - h, w: slot - 6, h, fill: i === n - 1 ? '#3DBB84' : i >= n - 2 ? '#2F6E90' : '#22303A' };
+        });
+      })()
+    : null;
 
   const navMarkets = tab === 'markets' ? active : idle;
   const navWatch = tab === 'watchlist' ? active : idle;
@@ -1144,7 +1198,7 @@ export default function Terminal() {
             <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Macro watch</span>
             <div className="mono" style={css("margin-top:12px; font-size:12.5px;")}>
               <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>Norges Bank rate</span><span style={css("color:#F2F4F7;")}>{macro.policyRate != null ? macro.policyRate.toFixed(2) + '%' : '4.25%'}</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>CPI (YoY)</span><span style={css("color:#F2F4F7;")}>3.1%</span></div>
+              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>CPI (YoY)</span><span style={css("color:#F2F4F7;")}>{macro.cpi != null ? macro.cpi.toFixed(1) + '%' : '3.1%'}</span></div>
               <div style={css("display:flex; justify-content:space-between; padding:7px 0;")}><span style={css("color:#DDE1E7;")}>10y NOK gov bond</span><span style={css("color:#F2F4F7;")}>3.62%</span></div>
             </div>
           </div>
@@ -1180,19 +1234,21 @@ export default function Terminal() {
         
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
           <div style={css("padding:16px 20px; border-bottom:1px solid #23272E;")}>
-            <div style={css("display:flex; align-items:center; gap:10px;")}><span className="mono" style={css("font-weight:600; font-size:15px; color:#F2F4F7;")}>DNB</span><span style={css("font-size:13px; color:#8A929E;")}>DNB Bank ASA · Q1 2026</span><span style={css("margin-left:auto; font-size:10.5px; color:#3DBB84; border:1px solid #1F5C43; border-radius:20px; padding:2px 9px;")}>Beat</span></div>
+            <div style={css("display:flex; align-items:center; gap:10px;")}><span className="mono" style={css("font-weight:600; font-size:15px; color:#F2F4F7;")}>DNB</span><span style={css("font-size:13px; color:#8A929E;")}>DNB Bank ASA · latest reported</span>{rcBeat == null ? null : <span style={css(`margin-left:auto; font-size:10.5px; color:${rcBeat ? '#3DBB84' : '#E4655E'}; border:1px solid ${rcBeat ? '#1F5C43' : '#5A2A26'}; border-radius:20px; padding:2px 9px;`)}>{rcBeat ? 'Beat' : 'Miss'}</span>}</div>
           </div>
           <div style={css("padding:18px 20px;")}>
             <div style={css("display:grid; grid-template-columns:1fr 1fr; gap:16px;")}>
-              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Net interest income</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>NOK 16.1bn</div><div className="mono" style={css("font-size:11.5px; color:#3DBB84; margin-top:2px;")}>+6.2% YoY</div></div>
-              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Profit after tax</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>NOK 9.4bn</div><div className="mono" style={css("font-size:11.5px; color:#3DBB84; margin-top:2px;")}>+4.1% YoY</div></div>
-              <div><div style={css("font-size:11.5px; color:#7C8492;")}>EPS</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>6.02</div><div className="mono" style={css("font-size:11.5px; color:#3DBB84; margin-top:2px;")}>vs 5.78 est.</div></div>
-              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Return on equity</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>14.2%</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>target ≥13%</div></div>
+              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Revenue (TTM)</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{rcRev}</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>trailing 12m</div></div>
+              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Net income</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{rcNI}</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>latest FY</div></div>
+              <div><div style={css("font-size:11.5px; color:#7C8492;")}>EPS (TTM)</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{rcEps}</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>trailing</div></div>
+              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Return on equity</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{rcRoe}</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>trailing</div></div>
             </div>
             <div style={css("margin-top:18px; border-top:1px solid #191D23; padding-top:14px;")}>
-              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:8px;")}>Revenue trend (8 quarters)</div>
+              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:8px;")}>Revenue trend (annual)</div>
               <svg viewBox="0 0 420 90" preserveAspectRatio="none" style={css("width:100%; height:90px; display:block;")}>
-                <rect x="6" y="46" width="38" height="44" fill="#22303A"/><rect x="54" y="40" width="38" height="50" fill="#22303A"/><rect x="102" y="44" width="38" height="46" fill="#22303A"/><rect x="150" y="34" width="38" height="56" fill="#22303A"/><rect x="198" y="30" width="38" height="60" fill="#2D4A5C"/><rect x="246" y="26" width="38" height="64" fill="#2D4A5C"/><rect x="294" y="20" width="38" height="70" fill="#2F6E90"/><rect x="342" y="14" width="38" height="76" fill="#3DBB84"/>
+                {revBars
+                  ? revBars.map((b, i) => <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} fill={b.fill} />)
+                  : <><rect x="6" y="46" width="38" height="44" fill="#22303A"/><rect x="54" y="40" width="38" height="50" fill="#22303A"/><rect x="102" y="44" width="38" height="46" fill="#22303A"/><rect x="150" y="34" width="38" height="56" fill="#22303A"/><rect x="198" y="30" width="38" height="60" fill="#2D4A5C"/><rect x="246" y="26" width="38" height="64" fill="#2D4A5C"/><rect x="294" y="20" width="38" height="70" fill="#2F6E90"/><rect x="342" y="14" width="38" height="76" fill="#3DBB84"/></>}
               </svg>
             </div>
             <div style={css("display:flex; gap:8px; margin-top:16px;")}>
@@ -1557,7 +1613,7 @@ export default function Terminal() {
 
       
       <div className="m-grid5" style={css("display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Portfolio beta</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>1.18</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>vs OSEBX</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Portfolio beta</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{portBeta != null ? portBeta.toFixed(2) : '1.18'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>weighted · vs market</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Ann. volatility</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>21.4%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>elevated</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>1-day VaR (95%)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>−2.8%</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>−NOK 36 000</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Max drawdown</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>−14.2%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>since inception</div></div>
@@ -1659,8 +1715,8 @@ export default function Terminal() {
 
       
       <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Foreign-currency exposure</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>40%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>non-NOK holdings</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD exposure</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#2F6E90; margin-top:5px;")}>23%</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>NOK 295 000</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Foreign-currency exposure</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{Math.round(foreignPct)}%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>non-NOK holdings</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD exposure</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#2F6E90; margin-top:5px;")}>{Math.round(usdPct)}%</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>NOK {fmtNum(ccyTotals.USD, 0)}</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Currency hedged</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>0%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>fully unhedged</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>FX effect · YTD</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+2.1%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>weaker NOK tailwind</div></div>
       </div>
@@ -1671,14 +1727,14 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:14px;")}>Exposure by currency</div>
             <div style={css("display:flex; height:16px; border-radius:6px; overflow:hidden; gap:2px; margin-bottom:14px;")}>
-              <div style={css("width:60%; background:#3DBB84;")}></div><div style={css("width:23%; background:#2F6E90;")}></div><div style={css("width:11%; background:#7C5CFF;")}></div><div style={css("width:6%; background:#C79A3D;")}></div>
+              {fxCurrencyRows.map((c, i) => (<div key={i} style={css(`width:${c.pct}%; background:${c.color};`)}></div>))}
             </div>
-            {fxBreakdown.map((c, i) => (<React.Fragment key={i}>
+            {fxCurrencyRows.map((c, i) => (<React.Fragment key={i}>
               <div style={css("display:flex; align-items:center; gap:12px; margin-bottom:11px;")}>
-                <span style={css("width:12px; height:12px; border-radius:3px; flex:0 0 auto;")} data-c={c.pct}>{c.dotEl}</span>
+                <span style={css(`display:block; width:12px; height:12px; border-radius:3px; flex:0 0 auto; background:${c.color};`)}></span>
                 <span style={css("width:150px; flex:0 0 auto; font-size:12.5px; color:#DDE1E7;")}>{c.label}</span>
-                <span className="mono" style={css("flex:1; text-align:right; font-size:12px; color:#9AA1AC;")}>{c.value}</span>
-                <span className="mono" style={css("width:44px; text-align:right; flex:0 0 auto; font-size:12.5px; color:#EDEFF2;")}>{c.pctLabel}</span>
+                <span className="mono" style={css("flex:1; text-align:right; font-size:12px; color:#9AA1AC;")}>NOK {fmtNum(c.value, 0)}</span>
+                <span className="mono" style={css("width:44px; text-align:right; flex:0 0 auto; font-size:12.5px; color:#EDEFF2;")}>{c.pct.toFixed(0)}%</span>
               </div>
             </React.Fragment>))}
           </div>

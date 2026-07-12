@@ -337,6 +337,8 @@ export interface SummaryInfo {
   recMean: number | null;
   recKey: string | null;
   numAnalysts: number | null;
+  beta: number | null;
+  trailingEps: number | null;
   buy: number;
   hold: number;
   sell: number;
@@ -388,6 +390,33 @@ export function useSummary(symbols: string[], intervalMs = 900000): Record<strin
   return sum;
 }
 
+export interface Fundamentals {
+  revenue: number | null;
+  netIncome: number | null;
+  eps: number | null;
+  roe: number | null;
+  dividendYield: number | null;
+  currency: string;
+  revenueTrend: number[];
+  beat: boolean | null;
+}
+export function useFundamentals(symbol: string, intervalMs = 3600000): Fundamentals | null {
+  const [f, setF] = useState<Fundamentals | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const j = (await getJSON(`/api/fundamentals?symbol=${encodeURIComponent(symbol)}`)) as
+        | { fundamentals?: Fundamentals }
+        | null;
+      if (alive && j && j.fundamentals && j.fundamentals.revenue != null) setF(j.fundamentals);
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [symbol, intervalMs]);
+  return f;
+}
+
 export function useInsider(intervalMs = 600000): InsiderTrade[] {
   const [trades, setTrades] = useState<InsiderTrade[]>([]);
   useEffect(() => {
@@ -412,14 +441,14 @@ export function fmtDayMon(unixSeconds: number | null): { day: string; mon: strin
   return { day, mon, label: `${day} ${mon}` };
 }
 
-// Official macro figures (Norges Bank policy rate). Null until loaded.
-export function useMacro(intervalMs = 3600000): { policyRate: number | null } {
-  const [macro, setMacro] = useState<{ policyRate: number | null }>({ policyRate: null });
+// Official macro figures (Norges Bank policy rate + SSB CPI). Null until loaded.
+export function useMacro(intervalMs = 3600000): { policyRate: number | null; cpi: number | null } {
+  const [macro, setMacro] = useState<{ policyRate: number | null; cpi: number | null }>({ policyRate: null, cpi: null });
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const j = (await getJSON('/api/macro')) as { policyRate?: number | null } | null;
-      if (alive && j) setMacro({ policyRate: j.policyRate ?? null });
+      const j = (await getJSON('/api/macro')) as { policyRate?: number | null; cpi?: number | null } | null;
+      if (alive && j) setMacro({ policyRate: j.policyRate ?? null, cpi: j.cpi ?? null });
     };
     load();
     const id = setInterval(load, intervalMs);

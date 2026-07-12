@@ -19,13 +19,14 @@ async function getCrumb() {
 }
 
 async function fetchSummary(sym, cookie, crumb) {
-  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,recommendationTrend,calendarEvents&crumb=${encodeURIComponent(crumb)}`;
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,recommendationTrend,calendarEvents,defaultKeyStatistics&crumb=${encodeURIComponent(crumb)}`;
   const r = await fetch(url, { headers: { 'User-Agent': UA, Cookie: cookie } });
   if (!r.ok) return null;
   const j = await r.json();
   const res = j?.quoteSummary?.result?.[0];
   if (!res) return null;
   const fd = res.financialData || {};
+  const ks = res.defaultKeyStatistics || {};
   const t0 = res.recommendationTrend?.trend?.[0] || {};
   const buy = (t0.strongBuy || 0) + (t0.buy || 0);
   const hold = t0.hold || 0;
@@ -38,6 +39,8 @@ async function fetchSummary(sym, cookie, crumb) {
     recMean: fd.recommendationMean?.raw ?? null,
     recKey: fd.recommendationKey ?? null,
     numAnalysts: fd.numberOfAnalystOpinions?.raw ?? null,
+    beta: ks.beta?.raw ?? null,
+    trailingEps: ks.trailingEps?.raw ?? null,
     buy,
     hold,
     sell,
