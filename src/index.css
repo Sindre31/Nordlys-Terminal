@@ -55,3 +55,97 @@ a:hover {
 .hov-c:hover {
   border-color: #5a4a8f;
 }
+
+/* ============ MOBILE / iPhone ============ */
+@media (max-width: 700px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* Turn the fixed desktop app-shell into natural document flow */
+  .app-root {
+    height: auto !important;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  .screen-area {
+    min-height: 0 !important;
+  }
+
+  .screen {
+    position: static !important;
+    inset: auto !important;
+    overflow: visible !important;
+    padding: 14px 12px !important;
+  }
+
+  /* Top bar wraps: brand row on top, scrollable tab row below */
+  .topbar {
+    height: auto !important;
+    flex-wrap: wrap;
+    gap: 10px !important;
+    padding: 8px 12px !important;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+  }
+
+  .nav {
+    order: 99;
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav > span {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .hide-sm {
+    display: none !important;
+  }
+
+  /* Stack the multi-column layouts */
+  .markets-grid {
+    grid-template-columns: 1fr !important;
+    overflow-y: visible !important;
+  }
+
+  .markets-grid > div {
+    border-right: none !important;
+    min-height: 0 !important;
+  }
+
+  .m-split {
+    grid-template-columns: 1fr !important;
+  }
+
+  .m-grid3,
+  .m-grid4,
+  .m-grid5,
+  .m-grid6 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Stock detail slides to full-width, stays fixed over the page */
+  .stock-overlay {
+    position: fixed !important;
+  }
+
+  .stock-panel {
+    position: fixed !important;
+    width: 100% !important;
+  }
+}

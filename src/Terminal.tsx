@@ -615,15 +615,15 @@ export default function Terminal() {
   return (
 
 
-<div style={css("height:100vh; display:flex; flex-direction:column; background:#14171B; color:#D5D9E0;")}>
+<div className="app-root" style={css("height:100vh; display:flex; flex-direction:column; background:#14171B; color:#D5D9E0;")}>
 
   
-  <div style={css("display:flex; align-items:center; gap:20px; padding:0 18px; height:48px; background:#0E1013; border-bottom:1px solid #23272E; flex:0 0 auto;")}>
+  <div className="topbar" style={css("display:flex; align-items:center; gap:20px; padding:0 18px; height:48px; background:#0E1013; border-bottom:1px solid #23272E; flex:0 0 auto;")}>
     <div style={css("display:flex; align-items:center; gap:9px;")}>
       <div style={css("width:16px; height:16px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #6FA8FF, #2D5BD0);")}></div>
       <span style={css("font-weight:600; font-size:14px; letter-spacing:0.02em; color:#F2F4F7;")}>NORDLYS</span>
     </div>
-    <div style={css("display:flex; gap:2px;")}>
+    <div className="nav" style={css("display:flex; gap:2px;")}>
       <span onClick={goMarkets} style={css(navMarkets)}>Markets</span>
       <span onClick={goWatch} style={css(navWatch)}>Watchlist</span>
       <span onClick={goNews} style={css(navNews)}>News</span>
@@ -637,10 +637,10 @@ export default function Terminal() {
       <span onClick={goBt} style={css(navBt)}>Backtest</span>
     </div>
     <div style={css("flex:1;")}></div>
-    <div style={css("display:flex; align-items:center; gap:8px; background:#191D24; border:1px solid #23272E; border-radius:7px; padding:6px 11px; width:220px; color:#5B626C; font-size:12.5px;")}>
+    <div className="hide-sm" style={css("display:flex; align-items:center; gap:8px; background:#191D24; border:1px solid #23272E; border-radius:7px; padding:6px 11px; width:220px; color:#5B626C; font-size:12.5px;")}>
       <span className="mono">⌕</span> Search symbol…
     </div>
-    <div className="mono" style={css("display:flex; align-items:center; gap:6px; font-size:11.5px; color:#8A929E;")}>
+    <div className="mono hide-sm" style={css("display:flex; align-items:center; gap:6px; font-size:11.5px; color:#8A929E;")}>
       <span style={css("width:7px; height:7px; border-radius:50%; background:#0E8A5F; box-shadow:0 0 0 3px rgba(14,138,95,0.18);")}></span>
       OSLO OPEN · 14:32 CET
     </div>
@@ -658,11 +658,11 @@ export default function Terminal() {
   </div>
 
   
-  <div style={css("flex:1; position:relative; min-height:0;")}>
+  <div className="screen-area" style={css("flex:1; position:relative; min-height:0;")}>
 
     
     {isMarkets && (<>
-    <div data-screen-label="Markets" style={css("position:absolute; inset:0; display:grid; grid-template-columns:340px 1fr 356px; min-height:0;")}>
+    <div data-screen-label="Markets" className="screen markets-grid" style={css("position:absolute; inset:0; display:grid; grid-template-columns:340px 1fr 356px; min-height:0;")}>
       
       <div style={css("border-right:1px solid #23272E; display:flex; flex-direction:column; min-height:0;")}>
         <div style={css("display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border-bottom:1px solid #23272E;")}>
@@ -775,7 +775,7 @@ export default function Terminal() {
 
     
     {isWatch && (<>
-    <div data-screen-label="Watchlist" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="Watchlist" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:18px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Watchlist</h2>
         <span style={css("font-size:13px; color:#8A929E;")}>9 instruments · Oslo Børs · NOK</span>
@@ -804,7 +804,7 @@ export default function Terminal() {
 
     
     {isNews && (<>
-    <div data-screen-label="News" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="News" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Newsflow</h2>
         <div style={css("flex:1;")}></div>
@@ -815,7 +815,7 @@ export default function Terminal() {
           <span style={css("padding:5px 11px; border-radius:6px; color:#8A929E; cursor:pointer;")}>Insider</span>
         </div>
       </div>
-      <div style={css("display:grid; grid-template-columns:1.4fr 1fr; gap:22px; align-items:start;")}>
+      <div className="m-split" style={css("display:grid; grid-template-columns:1.4fr 1fr; gap:22px; align-items:start;")}>
         
         <div>
           <div style={css("border:1px solid #23272E; border-radius:12px; overflow:hidden; background:#101317;")}>
@@ -864,7 +864,7 @@ export default function Terminal() {
 
     
     {isReports && (<>
-    <div data-screen-label="Reports" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="Reports" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:18px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Reports &amp; earnings</h2>
         <div style={css("flex:1;")}></div>
@@ -873,7 +873,7 @@ export default function Terminal() {
           <span style={css("padding:5px 11px; border-radius:6px; color:#8A929E; cursor:pointer;")}>Latest filings</span>
         </div>
       </div>
-      <div style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
+      <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
         
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
           <div style={css("padding:14px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Upcoming — July 2026</div>
@@ -940,12 +940,12 @@ export default function Terminal() {
 
     
     {isAlerts && (<>
-    <div data-screen-label="Alerts" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="Alerts" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:18px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Alerts</h2>
         <span style={css("font-size:13px; color:#8A929E;")}>3 active · 2 triggered today</span>
       </div>
-      <div style={css("display:grid; grid-template-columns:1.3fr 1fr; gap:22px; align-items:start;")}>
+      <div className="m-split" style={css("display:grid; grid-template-columns:1.3fr 1fr; gap:22px; align-items:start;")}>
         <div style={css("display:flex; flex-direction:column; gap:16px;")}>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             <div style={css("padding:13px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Active rules</div>
@@ -976,7 +976,7 @@ export default function Terminal() {
 
     
     {isAI && (<>
-    <div data-screen-label="AI Portfolio" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="AI Portfolio" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       
       <div style={css("display:flex; align-items:flex-start; gap:14px; margin-bottom:16px;")}>
         <div>
@@ -1008,7 +1008,7 @@ export default function Terminal() {
       </div>
 
       
-      <div style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;")}>
+      <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;")}>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Portfolio value</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>NOK 1 284 500</div><div className="mono" style={css("font-size:12px; color:#3DBB84; margin-top:3px;")}>+18.4% since inception</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Today</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+11 240</div><div className="mono" style={css("font-size:12px; color:#3DBB84; margin-top:3px;")}>+0.88%</div></div>
         <div onClick={toggleConv} style={css("border:1px solid #3B2F63; border-radius:12px; background:#141026; padding:15px 17px; cursor:pointer;")} className="hov-c"><div style={css("display:flex; align-items:center; gap:6px;")}><span style={css("font-size:11.5px; color:#7C8492;")}>AI conviction</span><span className="mono" style={css("margin-left:auto; font-size:10px; color:#B79BFF;")}>{convToggleLabel}</span></div><div className="mono" style={css("font-size:23px; font-weight:600; color:#B79BFF; margin-top:5px;")}>{convScore}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>{convTilt}</div></div>
@@ -1065,7 +1065,7 @@ export default function Terminal() {
       </div>
 
       
-      <div style={css("display:grid; grid-template-columns:1fr 384px; gap:22px; align-items:start;")}>
+      <div className="m-split" style={css("display:grid; grid-template-columns:1fr 384px; gap:22px; align-items:start;")}>
         
         <div style={css("display:flex; flex-direction:column; gap:16px;")}>
           
@@ -1264,14 +1264,14 @@ export default function Terminal() {
 
     
     {isRisk && (<>
-    <div data-screen-label="Risk" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="Risk" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Risk &amp; exposure</h2>
         <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio · NOK 1 284 500 · as of 14:32 CET</span>
       </div>
 
       
-      <div style={css("display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;")}>
+      <div className="m-grid5" style={css("display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;")}>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Portfolio beta</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>1.18</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>vs OSEBX</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Ann. volatility</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>21.4%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>elevated</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>1-day VaR (95%)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>−2.8%</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>−NOK 36 000</div></div>
@@ -1279,7 +1279,7 @@ export default function Terminal() {
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sharpe (1y)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>1.34</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>risk-adjusted</div></div>
       </div>
 
-      <div style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
+      <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
         
         <div style={css("display:flex; flex-direction:column; gap:16px;")}>
           
@@ -1366,21 +1366,21 @@ export default function Terminal() {
 
     
     {isFx && (<>
-    <div data-screen-label="Currency" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="Currency" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Currency exposure</h2>
         <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio · reporting currency NOK · as of 14:32 CET</span>
       </div>
 
       
-      <div style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
+      <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Foreign-currency exposure</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>40%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>non-NOK holdings</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD exposure</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#2F6E90; margin-top:5px;")}>23%</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>NOK 295 000</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Currency hedged</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>0%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>fully unhedged</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>FX effect · YTD</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+2.1%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>weaker NOK tailwind</div></div>
       </div>
 
-      <div style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
+      <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
         
         <div style={css("display:flex; flex-direction:column; gap:16px;")}>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
@@ -1399,7 +1399,7 @@ export default function Terminal() {
           </div>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:12px;")}>Reference rates</div>
-            <div style={css("display:grid; grid-template-columns:repeat(3,1fr); gap:12px;")}>
+            <div className="m-grid3" style={css("display:grid; grid-template-columns:repeat(3,1fr); gap:12px;")}>
               <div style={css("border:1px solid #23272E; border-radius:9px; padding:12px 13px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>USD/NOK</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>10.612</div><div className="mono" style={css("font-size:11px; color:#E4655E; margin-top:2px;")}>−0.18% · 1d</div></div>
               <div style={css("border:1px solid #23272E; border-radius:9px; padding:12px 13px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>EUR/NOK</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>11.481</div><div className="mono" style={css("font-size:11px; color:#E4655E; margin-top:2px;")}>−0.09% · 1d</div></div>
               <div style={css("border:1px solid #23272E; border-radius:9px; padding:12px 13px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>GBP/NOK</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>13.540</div><div className="mono" style={css("font-size:11px; color:#3DBB84; margin-top:2px;")}>+0.12% · 1d</div></div>
@@ -1441,21 +1441,21 @@ export default function Terminal() {
 
     
     {isAttr && (<>
-    <div data-screen-label="Attribution" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="Attribution" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Performance attribution</h2>
         <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio vs OSEBX · since inception (21 Feb 2026)</span>
       </div>
 
       
-      <div style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
+      <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Total return</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+18.4%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>portfolio, net</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Benchmark · OSEBX</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#9AA1AC; margin-top:5px;")}>+11.6%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>total return index</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#141026; border-color:#3B2F63; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Active return (alpha)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#B79BFF; margin-top:5px;")}>+6.8%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>Info ratio 0.94</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Top contributor</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>KOG</div><div className="mono" style={css("font-size:11px; color:#3DBB84; margin-top:2px;")}>+2.9 pp</div></div>
       </div>
 
-      <div style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
+      <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
         
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
           <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:14px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Active return decomposition</span><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#B79BFF;")}>Brinson</span></div>
@@ -1507,7 +1507,7 @@ export default function Terminal() {
 
     
     {isIns && (<>
-    <div data-screen-label="Insider" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="Insider" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Insider trades</h2>
         <span style={css("font-size:13px; color:#8A929E;")}>Primary-insider disclosures · Oslo Børs · last 30 days</span>
@@ -1521,7 +1521,7 @@ export default function Terminal() {
       </div>
 
       
-      <div style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
+      <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Net insider flow · 30d</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+NOK 12.4m</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>net buying</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Buy / sell trades</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>6 / 2</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>3:1 ratio</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sentiment</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>Bullish</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>CEO/CFO buying cluster</div></div>
@@ -1556,7 +1556,7 @@ export default function Terminal() {
 
     
     {isBt && (<>
-    <div data-screen-label="Backtest" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
+    <div data-screen-label="Backtest" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:14px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Backtest results</h2>
         <span style={css("font-size:13px; color:#8A929E;")}>AI strategy vs OSEBX · Jan 2016 – Jul 2026 · monthly rebalance</span>
@@ -1588,7 +1588,7 @@ export default function Terminal() {
       </div>
 
       
-      <div style={css("display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:16px;")}>
+      <div className="m-grid6" style={css("display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:16px;")}>
         <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>CAGR</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#3DBB84; margin-top:4px;")}>+17.9%</div></div>
         <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Total return</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#3DBB84; margin-top:4px;")}>+468%</div></div>
         <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Volatility</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#C79A3D; margin-top:4px;")}>19.8%</div></div>
@@ -1623,8 +1623,8 @@ export default function Terminal() {
 
   
   {hasStock && (<>
-  <div style={css("position:absolute; inset:0; background:rgba(6,8,11,0.55); z-index:40;")} onClick={closeStock}></div>
-  <div data-screen-label="Stock detail" style={css("position:absolute; top:0; right:0; bottom:0; width:720px; background:#101317; border-left:1px solid #23272E; z-index:41; overflow-y:auto; box-shadow:-30px 0 60px rgba(0,0,0,0.4);")}>
+  <div className="stock-overlay" style={css("position:absolute; inset:0; background:rgba(6,8,11,0.55); z-index:40;")} onClick={closeStock}></div>
+  <div data-screen-label="Stock detail" className="stock-panel" style={css("position:absolute; top:0; right:0; bottom:0; width:720px; background:#101317; border-left:1px solid #23272E; z-index:41; overflow-y:auto; box-shadow:-30px 0 60px rgba(0,0,0,0.4);")}>
     <div style={css("padding:20px 26px; border-bottom:1px solid #23272E; display:flex; align-items:flex-start; gap:14px;")}>
       <div>
         <div style={css("display:flex; align-items:center; gap:10px;")}>
@@ -1639,8 +1639,8 @@ export default function Terminal() {
       </div>
       <div style={css("flex:1;")}></div>
       <div style={css("display:flex; gap:8px; align-items:center;")}>
-        <button style={css("border:1px solid #2A2F37; background:#191D24; color:#DDE1E7; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>＋ Watchlist</button>
-        <button style={css("border:none; background:#2D5BD0; color:#fff; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Set alert</button>
+        <button className="hide-sm" style={css("border:1px solid #2A2F37; background:#191D24; color:#DDE1E7; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>＋ Watchlist</button>
+        <button className="hide-sm" style={css("border:none; background:#2D5BD0; color:#fff; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Set alert</button>
         <span onClick={closeStock} style={css("width:32px; height:32px; border-radius:8px; background:#191D24; border:1px solid #2A2F37; display:flex; align-items:center; justify-content:center; color:#9AA1AC; cursor:pointer; font-size:16px;")}>✕</span>
       </div>
     </div>
