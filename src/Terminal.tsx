@@ -7,6 +7,7 @@ import {
   useQuotes,
   useNews,
   useChart,
+  useMacro,
   useOsloClock,
   computePortfolio,
   buildChartPath,
@@ -338,6 +339,7 @@ export default function Terminal() {
   // ---- Live data (falls back to the designed values until it loads) ----
   const live: QuoteMap = useQuotes(ALL_SYMBOLS);
   const clock = useOsloClock();
+  const macro = useMacro();
   const marketNews = useNews('OSEBX Oslo Bors Norway stocks');
   const stockNews = useNews(stock ? STOCK_YAHOO[stock] || stock : 'OSEBX Oslo Bors');
   const idxCloses = useChart('OSEBX.OL', '1mo');
@@ -727,6 +729,36 @@ export default function Terminal() {
   const pctColor = (v: number) => (v >= 0 ? '#3DBB84' : '#E4655E');
   const pctText = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
 
+  // Sector moves derived from live constituent quotes (falls back to designed values).
+  const SECTOR_MEMBERS: Record<string, string[]> = {
+    Energy: ['EQNR', 'AKRBP'],
+    Materials: ['NHY', 'YAR'],
+    Financials: ['DNB'],
+    Seafood: ['MOWI', 'SALM'],
+    Industrials: ['KOG'],
+    Telecom: ['TEL'],
+  };
+  const SECTOR_STATIC: Record<string, number> = {
+    Energy: 1.41, Materials: 0.92, Financials: 0.34, Seafood: -0.88,
+    Industrials: 0.58, Telecom: -0.41, Shipping: 0.12, Tech: 1.06,
+  };
+  const sectorTiles = ['Energy', 'Materials', 'Financials', 'Seafood', 'Industrials', 'Telecom', 'Shipping', 'Tech'].map((name) => {
+    const members = SECTOR_MEMBERS[name];
+    let pct = SECTOR_STATIC[name];
+    if (members) {
+      const vals = members.map((t) => liveChg(t, NaN)).filter((v) => !Number.isNaN(v));
+      if (vals.length) pct = vals.reduce((a, b) => a + b, 0) / vals.length;
+    }
+    return { name, pct };
+  });
+  const sectorTile = (pct: number): { bg: string; label: string; val: string } => {
+    if (pct >= 1) return { bg: '#12583C', label: '#C8E6D8', val: '#fff' };
+    if (pct >= 0.5) return { bg: '#134C36', label: '#C8E6D8', val: '#fff' };
+    if (pct >= 0) return { bg: '#1B2C27', label: '#9FB4AB', val: '#DCEBE3' };
+    if (pct > -0.5) return { bg: '#4A2320', label: '#EBC9C6', val: '#fff' };
+    return { bg: '#5A2A26', label: '#EBC9C6', val: '#fff' };
+  };
+
   const navMarkets = tab === 'markets' ? active : idle;
   const navWatch = tab === 'watchlist' ? active : idle;
   const navNews = tab === 'news' ? active : idle;
@@ -871,14 +903,12 @@ export default function Terminal() {
         <div style={css("padding:12px 18px 8px; border-top:1px solid #23272E;")}>
           <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Sectors today</span>
           <div style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:9px;")}>
-            <div style={css("background:#12583C; border-radius:5px; padding:9px 10px;")}><div style={css("font-size:11px; color:#C8E6D8;")}>Energy</div><div className="mono" style={css("font-size:14px; font-weight:600; color:#fff;")}>+1.41%</div></div>
-            <div style={css("background:#134C36; border-radius:5px; padding:9px 10px;")}><div style={css("font-size:11px; color:#C8E6D8;")}>Materials</div><div className="mono" style={css("font-size:14px; font-weight:600; color:#fff;")}>+0.92%</div></div>
-            <div style={css("background:#1B2C27; border-radius:5px; padding:9px 10px;")}><div style={css("font-size:11px; color:#9FB4AB;")}>Financials</div><div className="mono" style={css("font-size:14px; font-weight:600; color:#DCEBE3;")}>+0.34%</div></div>
-            <div style={css("background:#4A2320; border-radius:5px; padding:9px 10px;")}><div style={css("font-size:11px; color:#EBC9C6;")}>Seafood</div><div className="mono" style={css("font-size:14px; font-weight:600; color:#fff;")}>-0.88%</div></div>
-            <div style={css("background:#123F31; border-radius:5px; padding:9px 10px;")}><div style={css("font-size:11px; color:#B9D6C8;")}>Industrials</div><div className="mono" style={css("font-size:14px; font-weight:600; color:#fff;")}>+0.58%</div></div>
-            <div style={css("background:#5A2A26; border-radius:5px; padding:9px 10px;")}><div style={css("font-size:11px; color:#EBC9C6;")}>Telecom</div><div className="mono" style={css("font-size:14px; font-weight:600; color:#fff;")}>-0.41%</div></div>
-            <div style={css("background:#1B2C27; border-radius:5px; padding:9px 10px;")}><div style={css("font-size:11px; color:#9FB4AB;")}>Shipping</div><div className="mono" style={css("font-size:14px; font-weight:600; color:#DCEBE3;")}>+0.12%</div></div>
-            <div style={css("background:#11543A; border-radius:5px; padding:9px 10px;")}><div style={css("font-size:11px; color:#C8E6D8;")}>Tech</div><div className="mono" style={css("font-size:14px; font-weight:600; color:#fff;")}>+1.06%</div></div>
+            {sectorTiles.map((s, i) => {
+              const c = sectorTile(s.pct);
+              return (
+                <div key={i} style={css(`background:${c.bg}; border-radius:5px; padding:9px 10px;`)}><div style={css(`font-size:11px; color:${c.label};`)}>{s.name}</div><div className="mono" style={css(`font-size:14px; font-weight:600; color:${c.val};`)}>{pctText(s.pct)}</div></div>
+              );
+            })}
           </div>
         </div>
         <div style={css("display:grid; grid-template-columns:1fr 1fr; border-top:1px solid #23272E;")}>
@@ -1002,7 +1032,7 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Macro watch</span>
             <div className="mono" style={css("margin-top:12px; font-size:12.5px;")}>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>Norges Bank rate</span><span style={css("color:#F2F4F7;")}>4.25%</span></div>
+              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>Norges Bank rate</span><span style={css("color:#F2F4F7;")}>{macro.policyRate != null ? macro.policyRate.toFixed(2) + '%' : '4.25%'}</span></div>
               <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>CPI (YoY)</span><span style={css("color:#F2F4F7;")}>3.1%</span></div>
               <div style={css("display:flex; justify-content:space-between; padding:7px 0;")}><span style={css("color:#DDE1E7;")}>10y NOK gov bond</span><span style={css("color:#F2F4F7;")}>3.62%</span></div>
             </div>

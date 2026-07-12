@@ -324,6 +324,25 @@ export function computePortfolio(live: QuoteMap, positions: Position[], cashNok:
   };
 }
 
+// Official macro figures (Norges Bank policy rate). Null until loaded.
+export function useMacro(intervalMs = 3600000): { policyRate: number | null } {
+  const [macro, setMacro] = useState<{ policyRate: number | null }>({ policyRate: null });
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const j = (await getJSON('/api/macro')) as { policyRate?: number | null } | null;
+      if (alive && j) setMacro({ policyRate: j.policyRate ?? null });
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [intervalMs]);
+  return macro;
+}
+
 // Live wall clock (Oslo), ticking once a minute.
 export function useOsloClock(): { time: string; open: boolean } {
   const [c, setC] = useState(osloClock());
