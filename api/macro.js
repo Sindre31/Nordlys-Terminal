@@ -11,21 +11,28 @@ const CPI_QUERY = {
   response: { format: 'json-stat2' },
 };
 
+async function nbValue(seriesUrl) {
+  const r = await fetch(seriesUrl, { headers: { 'User-Agent': UA } });
+  const txt = await r.text();
+  const lines = txt.trim().split('\n');
+  const header = lines[0].split(';');
+  const idx = header.indexOf('OBS_VALUE');
+  const last = lines[lines.length - 1].split(';');
+  const v = parseFloat(last[idx >= 0 ? idx : last.length - 1]);
+  return isFinite(v) ? v : null;
+}
+
 export default async function handler(req, res) {
-  const out = { policyRate: null, cpi: null };
+  const out = { policyRate: null, cpi: null, bond10y: null };
   // Norges Bank key policy rate (official, CSV).
   try {
-    const r = await fetch(
-      'https://data.norges-bank.no/api/data/IR/B.KPRA.SD.R?format=csv&lastNObservations=1',
-      { headers: { 'User-Agent': UA } },
-    );
-    const txt = await r.text();
-    const lines = txt.trim().split('\n');
-    const header = lines[0].split(';');
-    const idx = header.indexOf('OBS_VALUE');
-    const last = lines[lines.length - 1].split(';');
-    const rate = parseFloat(last[idx >= 0 ? idx : 12]);
-    if (isFinite(rate)) out.policyRate = rate;
+    out.policyRate = await nbValue('https://data.norges-bank.no/api/data/IR/B.KPRA.SD.R?format=csv&lastNObservations=1');
+  } catch {
+    /* leave null */
+  }
+  // Norges Bank 10-year government bond yield.
+  try {
+    out.bond10y = await nbValue('https://data.norges-bank.no/api/data/GOVT_GENERIC_RATES/B.10Y.GBON?format=csv&lastNObservations=1');
   } catch {
     /* leave null */
   }

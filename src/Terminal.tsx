@@ -351,8 +351,8 @@ export default function Terminal() {
   const dividends = useDividends(dividendSyms);
   const insiderLive = useInsider();
   const dnbFund = useFundamentals('DNB.OL');
-  const marketNews = useNews('OSEBX Oslo Bors Norway stocks');
-  const stockNews = useNews(stock ? STOCK_YAHOO[stock] || stock : 'OSEBX Oslo Bors');
+  const marketNews = useNews('');
+  const stockNews = useNews(stock ? stocks()[stock]?.name || '' : '', stock || '');
   const idxCloses = useChart('OSEBX.OL', '1mo');
   const detailCloses = useChart(stock ? STOCK_YAHOO[stock] || stock : null, '1mo');
 
@@ -772,8 +772,8 @@ export default function Terminal() {
 
   const feedItems = marketNews.length
     ? marketNews.slice(0, 8).map((n) => ({
-        ticker: (n.tickers[0] || 'MKT').replace('.OL', ''),
-        source: n.publisher || 'News',
+        ticker: n.ticker ? n.ticker.replace('.OL', '') : 'MKT',
+        source: n.source || 'News',
         time: fmtTime(n.time),
         title: n.title,
         link: n.link,
@@ -781,11 +781,20 @@ export default function Terminal() {
     : newsList.map((n) => ({ ...n, link: '' }));
 
   const sdNews = stockNews.length
-    ? stockNews.slice(0, 4).map((n) => ({ title: n.title, meta: `${n.publisher || 'News'} · ${fmtTime(n.time)}`, link: n.link }))
+    ? stockNews.slice(0, 4).map((n) => ({ title: n.title, meta: `${n.source || 'News'} · ${fmtTime(n.time)}`, link: n.link }))
     : [
         { title: 'Equinor lifts quarterly dividend, unveils $1.2bn buyback', meta: 'Reuters · 14:21', link: '' },
         { title: 'DNB Markets raises Equinor target to 340 NOK', meta: 'E24 · 11:05', link: '' },
         { title: 'Johan Castberg field starts production ahead of schedule', meta: 'Bloomberg · Yesterday', link: '' },
+      ];
+
+  const mostRead = marketNews.length > 8
+    ? marketNews.slice(8, 12).map((n) => ({ title: n.title, link: n.link }))
+    : [
+        { title: 'Kongsberg wins NOK 4.3bn defence contract from NATO partner', link: '' },
+        { title: 'Aker BP raises 2026 production guidance after Yggdrasil ramp-up', link: '' },
+        { title: 'Norges Bank holds policy rate at 4.25%, signals cut in autumn', link: '' },
+        { title: 'Salmon exporters warn of margin squeeze into Q3', link: '' },
       ];
 
   const pctColor = (v: number) => (v >= 0 ? '#3DBB84' : '#E4655E');
@@ -1242,10 +1251,9 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Most read</span>
             <div style={css("margin-top:12px; display:flex; flex-direction:column; gap:14px;")}>
-              <div style={css("display:flex; gap:12px;")}><span className="mono" style={css("font-size:16px; color:#3A414B; font-weight:600;")}>01</span><span style={css("font-size:13px; line-height:1.4; color:#DDE1E7;")}>Kongsberg wins NOK 4.3bn defence contract from NATO partner</span></div>
-              <div style={css("display:flex; gap:12px;")}><span className="mono" style={css("font-size:16px; color:#3A414B; font-weight:600;")}>02</span><span style={css("font-size:13px; line-height:1.4; color:#DDE1E7;")}>Aker BP raises 2026 production guidance after Yggdrasil ramp-up</span></div>
-              <div style={css("display:flex; gap:12px;")}><span className="mono" style={css("font-size:16px; color:#3A414B; font-weight:600;")}>03</span><span style={css("font-size:13px; line-height:1.4; color:#DDE1E7;")}>Norges Bank holds policy rate at 4.25%, signals cut in autumn</span></div>
-              <div style={css("display:flex; gap:12px;")}><span className="mono" style={css("font-size:16px; color:#3A414B; font-weight:600;")}>04</span><span style={css("font-size:13px; line-height:1.4; color:#DDE1E7;")}>Salmon exporters warn of margin squeeze into Q3</span></div>
+              {mostRead.map((m, i) => (
+                <a key={i} href={m.link || undefined} target="_blank" rel="noreferrer" style={css("display:flex; gap:12px; text-decoration:none;")}><span className="mono" style={css("font-size:16px; color:#3A414B; font-weight:600;")}>{String(i + 1).padStart(2, '0')}</span><span style={css("font-size:13px; line-height:1.4; color:#DDE1E7;")}>{m.title}</span></a>
+              ))}
             </div>
           </div>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
@@ -1253,7 +1261,7 @@ export default function Terminal() {
             <div className="mono" style={css("margin-top:12px; font-size:12.5px;")}>
               <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>Norges Bank rate</span><span style={css("color:#F2F4F7;")}>{macro.policyRate != null ? macro.policyRate.toFixed(2) + '%' : '4.25%'}</span></div>
               <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>CPI (YoY)</span><span style={css("color:#F2F4F7;")}>{macro.cpi != null ? macro.cpi.toFixed(1) + '%' : '3.1%'}</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0;")}><span style={css("color:#DDE1E7;")}>10y NOK gov bond</span><span style={css("color:#F2F4F7;")}>3.62%</span></div>
+              <div style={css("display:flex; justify-content:space-between; padding:7px 0;")}><span style={css("color:#DDE1E7;")}>10y NOK gov bond</span><span style={css("color:#F2F4F7;")}>{macro.bond10y != null ? macro.bond10y.toFixed(2) + '%' : '3.62%'}</span></div>
             </div>
           </div>
         </div>

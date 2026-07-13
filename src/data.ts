@@ -63,10 +63,10 @@ export type QuoteMap = Record<string, Quote>;
 
 export interface NewsItem {
   title: string;
-  publisher: string;
+  source: string;
   time: number | null;
   link: string;
-  tickers: string[];
+  ticker: string;
 }
 
 // ---- Formatting --------------------------------------------------------------
@@ -195,12 +195,12 @@ export function useQuotes(symbols: string[], intervalMs = 30000): QuoteMap {
   return quotes;
 }
 
-export function useNews(query: string, intervalMs = 120000): NewsItem[] {
+export function useNews(query: string, ticker = '', intervalMs = 120000): NewsItem[] {
   const [news, setNews] = useState<NewsItem[]>([]);
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const j = (await getJSON(`/api/news?q=${encodeURIComponent(query)}`)) as
+      const j = (await getJSON(`/api/news?q=${encodeURIComponent(query)}&ticker=${encodeURIComponent(ticker)}`)) as
         | { news?: NewsItem[] }
         | null;
       if (alive && j && Array.isArray(j.news)) setNews(j.news);
@@ -211,7 +211,7 @@ export function useNews(query: string, intervalMs = 120000): NewsItem[] {
       alive = false;
       clearInterval(id);
     };
-  }, [query, intervalMs]);
+  }, [query, ticker, intervalMs]);
   return news;
 }
 
@@ -364,8 +364,19 @@ export function useRiskStats(pairs: string[], rf: number, intervalMs = 1800000):
     if (!key) return;
     let alive = true;
     const load = async () => {
-      const j = (await getJSON(`/api/history?symbols=${encodeURIComponent(key)}&rf=${rf}`)) as RiskStats | null;
-      if (alive && j) setStats(j);
+      const j = (await getJSON(`/api/history?symbols=${encodeURIComponent(key)}&rf=${rf}`)) as Partial<RiskStats> | null;
+      if (alive && j)
+        setStats({
+          annVol: j.annVol ?? null,
+          maxDrawdown: j.maxDrawdown ?? null,
+          var95: j.var95 ?? null,
+          sharpe: j.sharpe ?? null,
+          beta: j.beta ?? null,
+          days: j.days ?? 0,
+          portReturn: j.portReturn ?? null,
+          benchReturn: j.benchReturn ?? null,
+          holdingReturns: j.holdingReturns ?? {},
+        });
     };
     load();
     const id = setInterval(load, intervalMs);
@@ -472,13 +483,13 @@ export function fmtDayMon(unixSeconds: number | null): { day: string; mon: strin
 }
 
 // Official macro figures (Norges Bank policy rate + SSB CPI). Null until loaded.
-export function useMacro(intervalMs = 3600000): { policyRate: number | null; cpi: number | null } {
-  const [macro, setMacro] = useState<{ policyRate: number | null; cpi: number | null }>({ policyRate: null, cpi: null });
+export function useMacro(intervalMs = 3600000): { policyRate: number | null; cpi: number | null; bond10y: number | null } {
+  const [macro, setMacro] = useState<{ policyRate: number | null; cpi: number | null; bond10y: number | null }>({ policyRate: null, cpi: null, bond10y: null });
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const j = (await getJSON('/api/macro')) as { policyRate?: number | null; cpi?: number | null } | null;
-      if (alive && j) setMacro({ policyRate: j.policyRate ?? null, cpi: j.cpi ?? null });
+      const j = (await getJSON('/api/macro')) as { policyRate?: number | null; cpi?: number | null; bond10y?: number | null } | null;
+      if (alive && j) setMacro({ policyRate: j.policyRate ?? null, cpi: j.cpi ?? null, bond10y: j.bond10y ?? null });
     };
     load();
     const id = setInterval(load, intervalMs);
