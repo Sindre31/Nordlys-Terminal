@@ -14,6 +14,7 @@ import {
   useInsider,
   useFundamentals,
   useRiskStats,
+  useBacktest,
   fmtDayMon,
   computePortfolio,
   buildChartPath,
@@ -435,6 +436,87 @@ export default function Terminal() {
     })
     .filter(Boolean) as string[];
   const riskStats = useRiskStats(riskPairs, macro.policyRate ?? 4.25);
+  const backtest = useBacktest(riskPairs, macro.policyRate ?? 4.25);
+
+  // ---- Real conviction engine ------------------------------------------------
+  // Per-holding conviction is computed from live analyst consensus (target upside
+  // + rating) and 1-year price momentum, then value-weighted into an overall
+  // 0–100 risk-appetite score. The chosen stance scales the net signal. Falls
+  // back to a neutral read where a name has no free consensus/history data.
+  const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
+  const stanceCfg: Record<RiskLevel, { k: number; cash: string; stance: string; tilt: string; note: string }> = {
+    conservative: { k: 0.62, cash: '15%', stance: 'Cautious', tilt: 'Capital-preservation · larger fund & cash core', note: 'Lower beta: single-stock tilts trimmed, more diversified funds and cash.' },
+    balanced: { k: 1.0, cash: '6.5%', stance: 'Risk-on', tilt: 'Risk-on · tilt to energy & defence', note: 'Default stance: acts on high-conviction signals, keeps a modest cash buffer.' },
+    aggressive: { k: 1.32, cash: '2%', stance: 'Max risk-on', tilt: 'Max risk-on · concentrated, higher beta', note: 'Higher beta: concentrated energy & defence tilt, minimal cash, faster signal action.' },
+  };
+  // Signed −1..+1 signal for one holding from whatever live data exists.
+  const holdingSignal = (sym: string): { sig: number; parts: number; up: number | null; ret: number | null } => {
+    const y = STOCK_YAHOO[sym];
+    const s = y ? summary[y] : undefined;
+    const px = localPrice(sym);
+    const ret = y != null && riskStats.holdingReturns[y] != null ? riskStats.holdingReturns[y] : null;
+    let sig = 0, wsum = 0;
+    // Analyst target upside (fraction), normalised to ±25%.
+    if (s && s.targetMean != null && px) {
+      const up = (s.targetMean - px) / px;
+      sig += 0.42 * clamp(up / 0.25, -1, 1); wsum += 0.42;
+    }
+    // Analyst rating: recMean 1 (strong buy) → +1, 3 (hold) → 0, 5 (sell) → −1.
+    if (s && s.recMean != null) {
+      sig += 0.33 * clamp((3 - s.recMean) / 2, -1, 1); wsum += 0.33;
+    }
+    // 1-year price momentum, normalised to ±40%.
+    if (ret != null) {
+      sig += 0.25 * clamp(ret / 40, -1, 1); wsum += 0.25;
+    }
+    const up = s && s.targetMean != null && px ? (s.targetMean - px) / px * 100 : null;
+    return { sig: wsum > 0 ? sig / wsum : 0, parts: wsum, up, ret };
+  };
+  // Per-holding conviction score/label, value-weighted net signal.
+  const convHold: Record<string, { score: number; label: string; up: number | null; ret: number | null }> = {};
+  let netW = 0, netAcc = 0;
+  let sumUp = 0, nUp = 0, sumRet = 0, nRet = 0, buyCnt = 0, ratedCnt = 0;
+  for (const p of POSITIONS) {
+    const { sig, parts, up, ret } = holdingSignal(p.ticker);
+    const score = clamp(Math.round(50 + sig * 46), 3, 99);
+    const label = score >= 66 ? 'High' : score >= 46 ? 'Medium' : 'Trim';
+    convHold[p.ticker] = { score, label, up, ret };
+    const w = port.totalValue > 0 ? port.valueOf(p.ticker) / port.totalValue : 0;
+    if (parts > 0) { netW += w; netAcc += w * sig; }
+    if (up != null) { sumUp += up; nUp++; }
+    if (ret != null) { sumRet += ret; nRet++; }
+    const y = STOCK_YAHOO[p.ticker];
+    const s = y ? summary[y] : undefined;
+    if (s && s.recMean != null) { ratedCnt++; if (s.recMean < 2.5) buyCnt++; }
+  }
+  const netSignal = netW > 0 ? netAcc / netW : 0; // −1..+1
+  const convDataReady = netW > 0.4 && ratedCnt >= 3;
+  const avgUpside = nUp ? sumUp / nUp : 0;
+  const avgRet = nRet ? sumRet / nRet : 0;
+  const benchRet = riskStats.benchReturn ?? 0;
+
+  // Explanatory factor bars, computed from the same live aggregates.
+  const realFactors = convDataReady
+    ? [
+        { label: 'Analyst upside', why: `Avg target ${avgUpside >= 0 ? '+' : ''}${avgUpside.toFixed(0)}% across held names`, val: Math.round(clamp(avgUpside / 20, -1, 1) * 24) },
+        { label: 'Price momentum', why: `Book ${avgRet >= 0 ? '+' : ''}${avgRet.toFixed(0)}% vs OSEBX ${benchRet >= 0 ? '+' : ''}${benchRet.toFixed(0)}% (1y)`, val: Math.round(clamp((avgRet - benchRet) / 25, -1, 1) * 18) },
+        { label: 'Analyst breadth', why: `${buyCnt}/${ratedCnt} held names rated buy or better`, val: Math.round((ratedCnt ? buyCnt / ratedCnt - 0.4 : 0) * 22) },
+        { label: 'Rates & macro', why: macro.policyRate != null ? `Norges Bank policy rate ${macro.policyRate.toFixed(2)}%${macro.cpi != null ? ` · CPI ${macro.cpi.toFixed(1)}%` : ''}` : 'Norges Bank policy backdrop', val: macro.cpi != null && macro.policyRate != null ? Math.round(clamp((macro.policyRate - macro.cpi) / 3, -1, 1) * 12) : 8 },
+        { label: 'Volatility & drawdown', why: riskStats.annVol != null ? `Realised vol ${riskStats.annVol.toFixed(0)}% annualised` : 'Realised volatility', val: riskStats.annVol != null ? -Math.round(clamp((riskStats.annVol - 18) / 12, 0, 1) * 12) : -7 },
+        { label: 'Concentration', why: `Top holding ${port.rows.length ? (Math.max(...port.rows.map((r) => port.totalValue > 0 ? r.valueNok / port.totalValue * 100 : 0))).toFixed(0) : '—'}% of book`, val: -Math.round(clamp((Math.max(0, ...port.rows.map((r) => port.totalValue > 0 ? r.valueNok / port.totalValue : 0)) - 0.12) / 0.1, 0, 1) * 8) },
+      ]
+    : [
+        { label: 'Geopolitical risk premium', why: 'Mideast shipping risk + NATO rearmament lift energy & defence', val: 22 },
+        { label: 'Earnings momentum', why: 'Q2 beats trend positive across held names', val: 12 },
+        { label: 'Rates & macro', why: 'Norges Bank signals autumn cut — supportive', val: 14 },
+        { label: 'Market breadth', why: 'Broad participation in the OSEBX advance', val: 9 },
+        { label: 'Trade & tariffs', why: 'US metals-tariff threat is an unresolved overhang', val: -8 },
+        { label: 'Volatility & drawdown', why: 'Realised vol elevated vs 3-month average', val: -7 },
+      ];
+  const stC = stanceCfg[risk] || stanceCfg.balanced;
+  const rawNet = convDataReady ? Math.round(netSignal * 58) : realFactors.reduce((s, f) => s + f.val, 0);
+  const convNetNum = Math.round(rawNet * stC.k);
+  const convScoreNum = clamp(30 + convNetNum, 5, 98);
 
   const watchlist = order.map((sym) => ({
     ticker: sym,
@@ -486,14 +568,7 @@ export default function Terminal() {
     { broker: 'Goldman Sachs', ticker: 'TEL', name: 'Telenor', rating: 'Neutral', target: '140', prev: '(145)', date: '02 Jul' },
   ].map((ar) => ({ ...ar, ratingEl: rating(ar.rating), open: S[ar.ticker] ? open(ar.ticker) : undefined }));
 
-  const convFactors = [
-    { label: 'Geopolitical risk premium', why: 'Mideast shipping risk + NATO rearmament lift energy & defence', val: 22 },
-    { label: 'Earnings momentum', why: 'Q2 beats trend positive across held names', val: 12 },
-    { label: 'Rates & macro', why: 'Norges Bank signals autumn cut — supportive', val: 14 },
-    { label: 'Market breadth', why: 'Broad participation in the OSEBX advance', val: 9 },
-    { label: 'Trade & tariffs', why: 'US metals-tariff threat is an unresolved overhang', val: -8 },
-    { label: 'Volatility & drawdown', why: 'Realised vol elevated vs 3-month average', val: -7 },
-  ].map((f) => ({ ...f, barEl: factorBar(f.val), valEl: factorVal(f.val) }));
+  const convFactors = realFactors.map((f) => ({ ...f, barEl: factorBar(f.val), valEl: factorVal(f.val) }));
 
   const aiHoldings = [
     { ticker: 'EQNR', name: 'Equinor', type: 'Share · Oslo Børs · Energy', alloc: '15.0%', value: '192 675', chg: 1.24, conv: 'High', driver: 'Oil bid on Mideast risk', ask: true },
@@ -506,24 +581,64 @@ export default function Terminal() {
     { ticker: 'NVDA', name: 'NVIDIA', type: 'Share · NASDAQ · Tech', alloc: '6.0%', value: '77 070', chg: 1.88, conv: 'Medium', driver: 'Rate-cut + AI capex', ask: false },
     { ticker: 'YAR', name: 'Yara International', type: 'Share · Oslo Børs · Materials', alloc: '6.0%', value: '77 070', chg: 0.88, conv: 'Medium', driver: 'Grain-disruption hedge', ask: true },
     { ticker: 'MOWI', name: 'Mowi', type: 'Share · Oslo Børs · Seafood', alloc: '9.0%', value: '115 605', chg: -1.15, conv: 'Trim', driver: 'Spot price weakness', ask: true },
-  ].map((h) => ({
-    ...h,
-    alloc: port.allocOf(h.ticker).toFixed(1) + '%',
-    value: fmtNum(port.valueOf(h.ticker), 0),
-    chgEl: chgEl(liveChg(h.ticker, h.chg), 12.5),
-    convEl: convBadge(h.conv),
-    askEl: askTag(h.ask),
-    open: S[h.ticker] ? open(h.ticker) : undefined,
-  }));
+  ].map((h) => {
+    const ch = convHold[h.ticker];
+    const conv = convDataReady && ch ? ch.label : h.conv;
+    // Data-driven driver line where consensus/momentum exists.
+    let driver = h.driver;
+    if (convDataReady && ch && (ch.up != null || ch.ret != null)) {
+      if (ch.up != null && Math.abs(ch.up) >= 3) driver = `Analyst target ${ch.up >= 0 ? '+' : ''}${ch.up.toFixed(0)}%`;
+      else if (ch.ret != null) driver = `1y ${ch.ret >= 0 ? '+' : ''}${ch.ret.toFixed(0)}% vs OSEBX`;
+    }
+    return {
+      ...h,
+      conv,
+      driver,
+      alloc: port.allocOf(h.ticker).toFixed(1) + '%',
+      value: fmtNum(port.valueOf(h.ticker), 0),
+      chgEl: chgEl(liveChg(h.ticker, h.chg), 12.5),
+      convEl: convBadge(conv),
+      askEl: askTag(h.ask),
+      open: S[h.ticker] ? open(h.ticker) : undefined,
+    };
+  });
 
-  const aiSignals = [
+  // Signal feed derived from real newswire headlines (E24 + Oslo Børs). Each item
+  // is classified by keyword sentiment and mapped to affected held names.
+  const HOLD_NAMES: Record<string, string[]> = {
+    EQNR: ['equinor'], KOG: ['kongsberg'], AKRBP: ['aker bp'], NHY: ['hydro'], YAR: ['yara'],
+    MOWI: ['mowi'], DNB: ['dnb'], TEL: ['telenor'], NVDA: ['nvidia'], LMT: ['lockheed'], XOM: ['exxon'], SALM: ['salmar'],
+  };
+  const BULL = /(raise|raises|beat|beats|wins?|win |contract|record|higher|upgrade|surge|jump|approv|expand|growth|strong)/i;
+  const BEAR = /(cut|cuts|fall|falls|slip|drop|tariff|probe|warn|lower|downgrade|loss|weak|delay|miss|strike|halt)/i;
+  const classify = (t: string) => (BULL.test(t) ? 'Bullish' : BEAR.test(t) ? 'Bearish' : 'Watch');
+  const newsSignals = (marketNews || [])
+    .map((n) => {
+      const lc = n.title.toLowerCase();
+      const hits: string[] = [];
+      for (const t of Object.keys(HOLD_NAMES)) {
+        if ((n.ticker && n.ticker.toUpperCase() === t) || HOLD_NAMES[t].some((nm) => lc.includes(nm))) hits.push(t);
+      }
+      return {
+        cat: n.ticker ? 'Company' : 'Market',
+        source: n.source,
+        sent: classify(n.title),
+        text: n.title,
+        tickers: hits.length ? hits.join(' · ') : (n.ticker || '—'),
+        time: n.time ? fmtTime(n.time) : '',
+        rel: hits.length,
+      };
+    })
+    .sort((a, b) => b.rel - a.rel)
+    .slice(0, 6);
+  const aiSignals = (newsSignals.length >= 3 ? newsSignals : [
     { cat: 'US Politics', source: 'Reuters', sent: 'Watch', text: 'Trump floats 25% tariff on European aluminium imports at rally', tickers: 'NHY · YAR', time: '13:52' },
     { cat: 'Conflict', source: 'Bloomberg', sent: 'Bullish', text: 'Tanker reroutes reported near Strait of Hormuz after new incident', tickers: 'EQNR · AKRBP · FRO', time: '12:20' },
     { cat: 'Defence', source: 'AP', sent: 'Bullish', text: 'European members pledge higher defence budgets at summit', tickers: 'KOG', time: '11:05' },
     { cat: 'Peace', source: 'AFP', sent: 'Bearish', text: 'Ceasefire talks reported to advance — could ease crude risk premium', tickers: 'EQNR · KOG', time: '10:18' },
     { cat: 'Trade', source: 'CNBC', sent: 'Bullish', text: 'Signs of US–China tariff de-escalation lift global risk appetite', tickers: 'GLOBAL · DNBTEK', time: '09:40' },
     { cat: 'US Politics', source: 'Reuters', sent: 'Watch', text: 'Trump reiterates push to “drill, baby, drill” — medium-term oil supply risk', tickers: 'EQNR · AKRBP', time: '08:55' },
-  ].map((sg) => ({ ...sg, sentEl: sentBadge(sg.sent) }));
+  ]).map((sg) => ({ ...sg, sentEl: sentBadge(sg.sent) }));
 
   const aiActions = [
     { dir: 1, text: 'Increased KOG +2.0%', time: '14:05', basis: 'Defence', conf: 'High', impact: '+0.9% NAV',
@@ -591,12 +706,13 @@ export default function Terminal() {
     { date: '01 Jul', ticker: 'SALM', company: 'SalMar', person: 'Chair', role: 'Board chair', side: 'BUY', shares: '3 000', value: 'NOK 1.84m', holding: '22 000' },
   ].map((t) => ({ ...t, sideEl: side(t.side), open: S[t.ticker] ? open(t.ticker) : undefined }));
 
-  const riskCfg: Record<RiskLevel, { score: string; net: string; stance: string; cash: string; tilt: string; note: string }> = {
-    conservative: { score: '48 / 100', net: '+18', stance: 'Cautious', cash: '15%', tilt: 'Capital-preservation · larger fund & cash core', note: 'Lower beta: single-stock tilts trimmed, more diversified funds and cash.' },
-    balanced: { score: '72 / 100', net: '+42', stance: 'Risk-on', cash: '6.5%', tilt: 'Risk-on · tilt to energy & defence', note: 'Default stance: acts on high-conviction signals, keeps a modest cash buffer.' },
-    aggressive: { score: '88 / 100', net: '+58', stance: 'Max risk-on', cash: '2%', tilt: 'Max risk-on · concentrated, higher beta', note: 'Higher beta: concentrated energy & defence tilt, minimal cash, faster signal action.' },
+  // Conviction display values come from the real engine above; the stance
+  // supplies the cash target, label and narrative note.
+  const rc = {
+    score: `${convScoreNum} / 100`,
+    net: `${convNetNum >= 0 ? '+' : ''}${convNetNum}`,
+    stance: stC.stance, cash: stC.cash, tilt: stC.tilt, note: stC.note,
   };
-  const rc = riskCfg[risk] || riskCfg.balanced;
   const segBase = 'padding:5px 13px; border-radius:6px; font-size:12px; cursor:pointer; color:#8A929E;';
   const segOn = 'padding:5px 13px; border-radius:6px; font-size:12px; cursor:pointer; color:#fff; background:linear-gradient(135deg,#7C5CFF,#4B33C7);';
 
@@ -986,6 +1102,47 @@ export default function Terminal() {
         });
       })()
     : null;
+
+  // ---- Backtest (real, from 10y monthly history) ----
+  const btOk = backtest.ok && backtest.metrics && backtest.pEquity && backtest.bEquity;
+  const bm = backtest.metrics;
+  const fmtK = (v: number) => 'NOK ' + Math.round(v / 1000) + 'k';
+  const sgn = (v: number, dec = 1, suf = '%') => (v >= 0 ? '+' : '') + v.toFixed(dec) + suf;
+  // Dual equity curve scaled to a shared range within viewBox 900×260.
+  let btChart: { p: string; pArea: string; bLine: string } | null = null;
+  if (btOk) {
+    const pe = backtest.pEquity as number[];
+    const be = backtest.bEquity as number[];
+    const W = 900, H = 260, padT = 20, padB = 30;
+    const min = Math.min(...pe, ...be);
+    const max = Math.max(...pe, ...be);
+    const span = max - min || 1;
+    const xy = (arr: number[]) => arr.map((v, i) => [(i / (arr.length - 1)) * W, padT + (1 - (v - min) / span) * (H - padT - padB)] as const);
+    const pc = xy(pe), bc = xy(be);
+    const line = (c: readonly (readonly [number, number])[]) => c.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+    btChart = {
+      p: line(pc),
+      pArea: `M${pc[0][0].toFixed(1)},${pc[0][1].toFixed(1)} ` + pc.slice(1).map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join(' ') + ` L${W},${H} L0,${H} Z`,
+      bLine: line(bc),
+    };
+  }
+  const btAnnual = btOk && backtest.annual && backtest.annual.length
+    ? backtest.annual.map((a) => ({ year: a.year, v: a.p, bench: sgn(a.b), barEl: contribBar(a.p, 35), stratEl: ppVal(a.p) }))
+    : annualReturns;
+  const btm = {
+    cagr: btOk ? sgn(bm!.cagr) : '+17.9%',
+    total: btOk ? sgn(bm!.totalReturn, 0) : '+468%',
+    vol: btOk ? bm!.annVol.toFixed(1) + '%' : '19.8%',
+    sharpe: btOk ? bm!.sharpe.toFixed(2) : '1.28',
+    sortino: btOk ? bm!.sortino.toFixed(2) : '1.71',
+    mdd: btOk ? bm!.maxDrawdown.toFixed(1) + '%' : '−24.6%',
+    alpha: btOk ? sgn(bm!.alpha) : '+5.4%',
+    beta: btOk ? bm!.beta.toFixed(2) : '1.12',
+    win: btOk ? bm!.winRate.toFixed(0) + '%' : '63%',
+    best: btOk ? sgn(bm!.bestYear) : '+33.1%',
+    worst: btOk ? bm!.worstYear.toFixed(1) + '%' : '−11.8%',
+    turnover: btOk ? bm!.turnover.toFixed(0) + '%' : '86%',
+  };
 
   const navMarkets = tab === 'markets' ? active : idle;
   const navWatch = tab === 'watchlist' ? active : idle;
@@ -1980,9 +2137,9 @@ export default function Terminal() {
     <div data-screen-label="Backtest" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:14px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Backtest results</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>AI strategy vs OSEBX · Jan 2016 – Jul 2026 · monthly rebalance</span>
+        <span style={css("font-size:13px; color:#8A929E;")}>AI-weighted basket vs OSEBX · {btOk ? `${backtest.startYear}–${backtest.endYear}` : '2016–2026'} · monthly rebalance</span>
         <div style={css("flex:1;")}></div>
-        <span className="mono" style={css("font-size:10.5px; color:#5B626C; border:1px solid #2A2F37; border-radius:20px; padding:3px 10px;")}>Simulated · not live results</span>
+        <span className="mono" style={css("font-size:10.5px; color:#5B626C; border:1px solid #2A2F37; border-radius:20px; padding:3px 10px;")}>{btOk ? 'Real prices · Yahoo Finance' : 'Loading…'}</span>
       </div>
 
       
@@ -1991,8 +2148,8 @@ export default function Terminal() {
           <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Growth of NOK 100 000</span>
           <div style={css("flex:1;")}></div>
           <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11.5px; color:#9AA1AC;")}>
-            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#3DBB84;")}></span>AI strategy · NOK 568k</span>
-            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#4E5661;")}></span>OSEBX · NOK 301k</span>
+            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#3DBB84;")}></span>AI basket · {btOk ? fmtK(bm!.finalValue) : 'NOK 568k'}</span>
+            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#4E5661;")}></span>OSEBX · {btOk ? fmtK(bm!.benchFinal) : 'NOK 301k'}</span>
           </div>
         </div>
         <svg viewBox="0 0 900 260" preserveAspectRatio="none" style={css("width:100%; height:250px; display:block;")}>
@@ -2000,34 +2157,33 @@ export default function Terminal() {
           <line x1="0" y1="65" x2="900" y2="65" stroke="#20242B" strokeWidth="1"/>
           <line x1="0" y1="130" x2="900" y2="130" stroke="#20242B" strokeWidth="1"/>
           <line x1="0" y1="195" x2="900" y2="195" stroke="#20242B" strokeWidth="1"/>
-          <polyline points="0,230 90,214 180,218 270,200 360,194 450,176 540,180 630,168 720,158 810,138 900,120" fill="none" stroke="#4E5661" strokeWidth="1.8"/>
-          <path d="M0,230 L90,210 L180,216 L270,186 L360,176 L450,150 L540,168 L630,140 L720,108 L810,82 L900,48 L900,260 L0,260 Z" fill="url(#btgrad)"/>
-          <polyline points="0,230 90,210 180,216 270,186 360,176 450,150 540,168 630,140 720,108 810,82 900,48" fill="none" stroke="#3DBB84" strokeWidth="2.4"/>
-          <circle cx="900" cy="48" r="4" fill="#3DBB84"/>
+          <polyline points={btChart ? btChart.bLine : "0,230 90,214 180,218 270,200 360,194 450,176 540,180 630,168 720,158 810,138 900,120"} fill="none" stroke="#4E5661" strokeWidth="1.8"/>
+          <path d={btChart ? btChart.pArea : "M0,230 L90,210 L180,216 L270,186 L360,176 L450,150 L540,168 L630,140 L720,108 L810,82 L900,48 L900,260 L0,260 Z"} fill="url(#btgrad)"/>
+          <polyline points={btChart ? btChart.p : "0,230 90,210 180,216 270,186 360,176 450,150 540,168 630,140 720,108 810,82 900,48"} fill="none" stroke="#3DBB84" strokeWidth="2.4"/>
         </svg>
         <div className="mono" style={css("display:flex; justify-content:space-between; font-size:10px; color:#5B626C; margin-top:4px;")}><span>2016</span><span>2018</span><span>2020</span><span>2022</span><span>2024</span><span>2026</span></div>
       </div>
 
       
       <div className="m-grid6" style={css("display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-bottom:16px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>CAGR</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#3DBB84; margin-top:4px;")}>+17.9%</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Total return</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#3DBB84; margin-top:4px;")}>+468%</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Volatility</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#C79A3D; margin-top:4px;")}>19.8%</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Sharpe</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>1.28</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Sortino</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>1.71</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Max drawdown</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#E4655E; margin-top:4px;")}>−24.6%</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Alpha / yr</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#B79BFF; margin-top:4px;")}>+5.4%</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Beta</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>1.12</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Win rate (mo)</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>63%</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Best year</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#3DBB84; margin-top:4px;")}>+33.1%</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Worst year</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#E4655E; margin-top:4px;")}>−11.8%</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Turnover / yr</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>86%</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>CAGR</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#3DBB84; margin-top:4px;")}>{btm.cagr}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Total return</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#3DBB84; margin-top:4px;")}>{btm.total}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Volatility</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#C79A3D; margin-top:4px;")}>{btm.vol}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Sharpe</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>{btm.sharpe}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Sortino</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>{btm.sortino}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Max drawdown</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#E4655E; margin-top:4px;")}>{btm.mdd}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Alpha / yr</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#B79BFF; margin-top:4px;")}>{btm.alpha}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Beta</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>{btm.beta}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Win rate (mo)</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>{btm.win}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Best year</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#3DBB84; margin-top:4px;")}>{btm.best}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Worst year</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#E4655E; margin-top:4px;")}>{btm.worst}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:11px; background:#101317; padding:13px 14px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Turnover / yr</div><div className="mono" style={css("font-size:18px; font-weight:600; color:#F2F4F7; margin-top:4px;")}>{btm.turnover}</div></div>
       </div>
 
       
       <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
         <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:14px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Annual returns vs OSEBX</span><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#5B626C;")}>strategy bar · benchmark in grey</span></div>
-        {annualReturns.map((y, i) => (<React.Fragment key={i}>
+        {btAnnual.map((y, i) => (<React.Fragment key={i}>
           <div style={css("display:flex; align-items:center; gap:12px; margin-bottom:9px;")}>
             <span className="mono" style={css("width:52px; flex:0 0 auto; font-size:12px; color:#DDE1E7;")}>{y.year}</span>
             <div style={css("flex:1; height:12px; background:#1A1E24; border-radius:5px; position:relative; overflow:hidden;")}>{y.barEl}</div>
@@ -2036,7 +2192,7 @@ export default function Terminal() {
           </div>
         </React.Fragment>))}
       </div>
-      <div style={css("font-size:11px; color:#5B626C; line-height:1.5; margin-top:12px;")}>Backtest applies the current signal model to historical prices with a monthly rebalance and modelled 0.05% per-trade cost. Simulated results assume perfect signal availability and do not represent actual returns; past performance is not indicative of future results.</div>
+      <div style={css("font-size:11px; color:#5B626C; line-height:1.5; margin-top:12px;")}>Backtest applies the portfolio's current target weights to real monthly closing prices (Yahoo Finance), rebalanced monthly with a modelled 0.05% per-trade cost, benchmarked against OSEBX. It assumes today's weights were held throughout and does not represent actual historical trades; past performance is not indicative of future results.</div>
     </div>
     </>)}
 

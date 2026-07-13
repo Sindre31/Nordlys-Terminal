@@ -385,6 +385,36 @@ export function useRiskStats(pairs: string[], rf: number, intervalMs = 1800000):
   return stats;
 }
 
+export interface BacktestResult {
+  ok: boolean;
+  startYear?: number;
+  endYear?: number;
+  pEquity?: number[];
+  bEquity?: number[];
+  metrics?: {
+    cagr: number; totalReturn: number; annVol: number; sharpe: number; sortino: number;
+    maxDrawdown: number; alpha: number; beta: number; winRate: number; bestYear: number;
+    worstYear: number; turnover: number; finalValue: number; benchFinal: number;
+  };
+  annual?: { year: string; p: number; b: number }[];
+}
+export function useBacktest(pairs: string[], rf: number, intervalMs = 21600000): BacktestResult {
+  const [bt, setBt] = useState<BacktestResult>({ ok: false });
+  const key = pairs.join(',');
+  useEffect(() => {
+    if (!key) return;
+    let alive = true;
+    const load = async () => {
+      const j = (await getJSON(`/api/backtest?symbols=${encodeURIComponent(key)}&rf=${rf}`)) as BacktestResult | null;
+      if (alive && j && j.ok) setBt(j);
+    };
+    load();
+    const id = setInterval(load, intervalMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [key, rf, intervalMs]);
+  return bt;
+}
+
 export interface InsiderTrade {
   id: number;
   ticker: string;
