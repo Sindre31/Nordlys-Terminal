@@ -743,6 +743,15 @@ export default function Terminal() {
       ],
     });
   };
+
+  // Wipes the persisted ledger so the next render re-seeds a fresh book from today's
+  // model selection (new inception date, cost basis = today, empty history). Lets a user
+  // start over — e.g. after the tracked universe changes or they want a clean slate.
+  const resetPortfolio = () => {
+    if (!window.confirm('Reset the AI portfolio? This clears its saved holdings, cost basis and history, then rebuilds from today’s model selection. This cannot be undone.')) return;
+    localStorage.removeItem('nordlys_portfolio_ledger');
+    setLedger(null);
+  };
   const sinceIncStr = (port.sinceInception >= 0 ? '+' : '') + port.sinceInception.toFixed(1) + '%';
   // Weight pairs (fraction of total portfolio value) for the real risk engine.
   const riskPairs = port.rows
@@ -1977,7 +1986,12 @@ export default function Terminal() {
         </div>
         <div style={css("flex:1;")}></div>
         <div style={css("display:flex; flex-direction:column; align-items:flex-end; gap:8px;")}>
-          <button onClick={runRebalance} disabled={!quantModel.ready} style={css(`border:none; background:${quantModel.ready ? 'linear-gradient(135deg,#7C5CFF,#4B33C7)' : '#2A2F37'}; color:#fff; font-size:12.5px; font-weight:500; padding:9px 16px; border-radius:8px; cursor:${quantModel.ready ? 'pointer' : 'not-allowed'}; font-family:inherit;`)}>↻ Rebalance now</button>
+          <div style={css("display:flex; align-items:center; gap:8px;")}>
+            {ledger && (
+              <button onClick={resetPortfolio} style={css("border:1px solid #3A2A2A; background:#1A1214; color:#E4938E; font-size:12.5px; font-weight:500; padding:9px 14px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Reset</button>
+            )}
+            <button onClick={runRebalance} disabled={!quantModel.ready} style={css(`border:none; background:${quantModel.ready ? 'linear-gradient(135deg,#7C5CFF,#4B33C7)' : '#2A2F37'}; color:#fff; font-size:12.5px; font-weight:500; padding:9px 16px; border-radius:8px; cursor:${quantModel.ready ? 'pointer' : 'not-allowed'}; font-family:inherit;`)}>↻ Rebalance now</button>
+          </div>
           <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11px; color:#5B626C;")}>
             <span>Last run {ledger?.log[0]?.date ?? '—'}</span>
             <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:7px;height:7px;border-radius:50%;background:#3DBB84;box-shadow:0 0 0 3px rgba(14,138,95,0.18);")}></span>Nordnet · live prices</span>
