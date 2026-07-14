@@ -12,7 +12,7 @@ const COST = 0.0005; // 0.05% per-trade cost applied to monthly turnover
 // after UTC midnight on the 1st of the next month) — a plain UTC-date bucket would put them a day
 // apart. Shifting back 12 hours before reading the year/month reliably lands both on the same
 // side of that boundary without risking misattributing a genuinely different month.
-function monthKey(epochSeconds) {
+export function monthKey(epochSeconds) {
   const d = new Date((epochSeconds - 12 * 3600) * 1000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }

@@ -239,3 +239,51 @@ export function runBacktest(
     latestScores,
   };
 }
+
+export interface SplitHalfMetrics {
+  cagr: number;
+  benchCagr: number;
+  sharpe: number;
+  maxDrawdown: number;
+  totalReturn: number;
+}
+
+export interface SplitValidation {
+  firstHalf: SplitHalfMetrics;
+  secondHalf: SplitHalfMetrics;
+}
+
+// Out-of-sample check: since this model has no fitted parameters to overfit (topN/scoreThreshold
+// are pre-specified, not tuned to this data), the real risk is factor selection on a small
+// universe over a short history. Splitting the same history in half and running the identical
+// rule on each independently shows whether performance is consistent or was carried by one
+// lucky stretch — a real (if simple) robustness check rather than a single aggregate number.
+export function runSplitValidation(
+  weekKeys: string[],
+  series: Record<string, number[]>,
+  tickers: string[],
+  benchmarkKey: string,
+  opts: BacktestOptions = {},
+): SplitValidation | null {
+  const n = weekKeys.length;
+  const mid = Math.floor(n / 2);
+  const sliceSeries = (rec: Record<string, number[]>, from: number, to: number) => {
+    const out: Record<string, number[]> = {};
+    for (const k of Object.keys(rec)) out[k] = rec[k].slice(from, to);
+    return out;
+  };
+  const toHalf = (r: BacktestResult): SplitHalfMetrics => ({
+    cagr: r.metrics.stratCagr,
+    benchCagr: r.metrics.benchCagr,
+    sharpe: r.metrics.sharpe,
+    maxDrawdown: r.metrics.maxDrawdown,
+    totalReturn: r.metrics.totalReturn,
+  });
+  try {
+    const first = runBacktest(weekKeys.slice(0, mid), sliceSeries(series, 0, mid), tickers, benchmarkKey, opts);
+    const second = runBacktest(weekKeys.slice(mid), sliceSeries(series, mid, n), tickers, benchmarkKey, opts);
+    return { firstHalf: toHalf(first), secondHalf: toHalf(second) };
+  } catch {
+    return null;
+  }
+}

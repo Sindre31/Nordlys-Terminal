@@ -41,6 +41,8 @@ async function fetchSummary(sym, cookie, crumb) {
     numAnalysts: fd.numberOfAnalystOpinions?.raw ?? null,
     beta: ks.beta?.raw ?? null,
     trailingEps: ks.trailingEps?.raw ?? null,
+    priceToBook: ks.priceToBook?.raw ?? null,
+    returnOnEquity: fd.returnOnEquity?.raw ?? null,
     buy,
     hold,
     sell,

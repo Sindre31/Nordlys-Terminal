@@ -120,6 +120,10 @@ function stocks() {
     NVDA: { name: 'NVIDIA', last: '172.30', chg: 1.88, open: '169.10', range: '168.4 – 173.5', vol: '188M', cap: '$4.1T', cur: 'USD' },
     GLOBAL: { name: 'Nordnet Indeksfond Global', last: '248.60', chg: 0.41, open: '247.55', range: '247.0 – 249.1', vol: '—', cap: '—', cur: 'NOK' },
     DNBTEK: { name: 'DNB Teknologi A', last: '612.10', chg: 0.62, open: '608.80', range: '607.5 – 614.0', vol: '—', cap: '—', cur: 'NOK' },
+    TOM: { name: 'Tomra Systems', last: '178.20', chg: 0.55, open: '177.10', range: '175.9 – 179.4', vol: '0.68M', cap: '48B' },
+    FRO: { name: 'Frontline', last: '221.60', chg: -0.60, open: '223.00', range: '219.8 – 224.1', vol: '1.05M', cap: '52B' },
+    ORK: { name: 'Orkla', last: '102.40', chg: 0.30, open: '102.05', range: '101.6 – 103.0', vol: '1.30M', cap: '109B' },
+    STB: { name: 'Storebrand', last: '132.80', chg: 0.75, open: '131.90', range: '130.9 – 133.5', vol: '0.85M', cap: '61B' },
   } as Record<string, { name: string; last: string; chg: number; open: string; range: string; vol: string; cap: string; cur?: string }>;
 }
 
@@ -360,6 +364,45 @@ interface TriggeredAlert {
   at: string;
 }
 
+interface LedgerHolding {
+  ticker: string;
+  qty: number;
+  theme: string;
+  costNok: number;
+}
+interface RebalanceAction {
+  text: string;
+  detail: string;
+  dir: 1 | -1 | 0;
+}
+interface RebalanceLogEntry {
+  date: string;
+  changes: string;
+  reasoning: string;
+  actions: RebalanceAction[];
+}
+interface NavPoint {
+  date: string;
+  totalValue: number;
+}
+interface LedgerTransaction {
+  date: string;
+  side: 'BUY' | 'SELL';
+  ticker: string;
+  qty: number;
+  price: number;
+  priceCcy: 'NOK' | 'USD';
+  account: string;
+}
+interface PortfolioLedger {
+  inceptionDate: string;
+  holdings: LedgerHolding[];
+  cashNok: number;
+  log: RebalanceLogEntry[];
+  navHistory: NavPoint[];
+  transactions: LedgerTransaction[];
+}
+
 export default function Terminal() {
   const [tab, setTab] = useState<Tab>('markets');
   const [stock, setStock] = useState<string | null>(null);
@@ -394,7 +437,7 @@ export default function Terminal() {
   const clock = useOsloClock();
   const macro = useMacro();
   // Oslo-listed symbols for consensus/dividends/earnings (funds & US names excluded where no data).
-  const OSLO_SET = ['EQNR', 'DNB', 'TEL', 'NHY', 'MOWI', 'YAR', 'AKRBP', 'KOG', 'SALM'];
+  const OSLO_SET = ['EQNR', 'DNB', 'TEL', 'NHY', 'MOWI', 'YAR', 'AKRBP', 'KOG', 'SALM', 'TOM', 'FRO', 'ORK', 'STB'];
   const summarySymbols = OSLO_SET.map((t) => STOCK_YAHOO[t]).filter(Boolean) as string[];
   const summary = useSummary(summarySymbols);
   // Fetches for the full tracked universe so whichever names the model currently holds
@@ -497,15 +540,17 @@ export default function Terminal() {
 
   // ---- Live-valued AI portfolio (holdings picked by the quant model, priced at live quotes) ----
   // Holdings are the model's own top-N BUY-rated names for the current risk level (same
-  // momentum/trend/low-vol composite + topN/scoreThreshold used in the Backtest tab), sized
-  // equal-weight over a fixed notional account, with the rest held as cash. This is a real
-  // allocation decision, not a fixed narrative-driven list.
+  // momentum/trend/low-vol/value/quality composite used in the Backtest tab). The actual
+  // holdings, cost basis and cash balance are persisted in a "ledger" (localStorage) rather
+  // than recomputed from scratch every render, so since-inception performance and the
+  // rebalance history genuinely accumulate over time instead of resetting on every visit.
   const THEME_OF: Record<string, string> = {
     EQNR: 'Energy', AKRBP: 'Energy', XOM: 'Energy',
-    KOG: 'Defence', LMT: 'Defence',
+    KOG: 'Defence', LMT: 'Defence', TOM: 'Industrials',
     NHY: 'Materials', YAR: 'Materials',
     MOWI: 'Seafood', SALM: 'Seafood',
-    DNB: 'Financials', TEL: 'Telecom', NVDA: 'Tech',
+    DNB: 'Financials', STB: 'Financials',
+    TEL: 'Telecom', NVDA: 'Tech', FRO: 'Shipping', ORK: 'Consumer',
   };
   const CASH_FRACTION: Record<RiskLevel, number> = { conservative: 0.15, balanced: 0.065, aggressive: 0.02 };
   const TOTAL_AUM = 1_300_000;
@@ -516,28 +561,73 @@ export default function Terminal() {
     if (!q) return null;
     return q.currency === 'USD' ? q.price * usdnokRate : q.price;
   };
+  const nativePriceFor = (t: string): number | null => {
+    const y = STOCK_YAHOO[t];
+    const q = y ? live[y] : undefined;
+    return q ? q.price : null;
+  };
   const qmOpts = RISK_OPTIONS[risk];
-  const qmScores = quantModel.ready ? quantModel.backtest?.latestScores : undefined;
-  const selectedTickers = qmScores
-    ? Object.entries(qmScores)
-        .map(([t, s]) => ({ t, score: s.composite }))
-        .filter((x): x is { t: string; score: number } => x.score != null && x.score > (qmOpts.scoreThreshold ?? 0))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, qmOpts.topN ?? 5)
-        .map((x) => x.t)
-    : [];
-  const cashFraction = selectedTickers.length > 0 ? CASH_FRACTION[risk] : 1;
-  const perNameNok = selectedTickers.length > 0 ? (TOTAL_AUM * (1 - cashFraction)) / selectedTickers.length : 0;
-  const POSITIONS: Position[] = selectedTickers.map((t) => {
-    const pn = priceNokFor(t);
-    const qty = pn && pn > 0 ? Math.max(1, Math.round(perNameNok / pn)) : 0;
-    return { ticker: t, qty, theme: THEME_OF[t] || 'Other', fallbackNok: perNameNok };
-  });
-  const investedEstimate = POSITIONS.reduce((s, p) => {
-    const pn = priceNokFor(p.ticker);
-    return s + (p.qty > 0 && pn != null ? p.qty * pn : p.fallbackNok);
-  }, 0);
-  const CASH_NOK = Math.max(0, TOTAL_AUM - investedEstimate);
+  const rankByLiveScore = (topN: number, threshold: number): string[] =>
+    Object.entries(quantModel.liveScores)
+      .map(([t, score]) => ({ t, score }))
+      .filter((x): x is { t: string; score: number } => x.score != null && x.score > threshold)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topN)
+      .map((x) => x.t);
+  const selectedTickers = quantModel.ready ? rankByLiveScore(qmOpts.topN ?? 5, qmOpts.scoreThreshold ?? 0) : [];
+  const todayISO = new Date().toISOString().slice(0, 10);
+
+  const [ledger, setLedger] = useState<PortfolioLedger | null>(() => loadLS<PortfolioLedger | null>('nordlys_portfolio_ledger', null));
+  useEffect(() => {
+    if (ledger) localStorage.setItem('nordlys_portfolio_ledger', JSON.stringify(ledger));
+  }, [ledger]);
+
+  // First-ever load: seed the ledger from today's model selection. Inception is genuinely
+  // "today" — cost basis is today's live value, so since-inception starts at 0%.
+  useEffect(() => {
+    if (ledger || !quantModel.ready) return;
+    const cashFrac = selectedTickers.length > 0 ? CASH_FRACTION[risk] : 1;
+    const perName = selectedTickers.length > 0 ? (TOTAL_AUM * (1 - cashFrac)) / selectedTickers.length : 0;
+    const holdings: LedgerHolding[] = selectedTickers.map((t) => {
+      const pn = priceNokFor(t);
+      const qty = pn && pn > 0 ? Math.max(1, Math.round(perName / pn)) : 0;
+      const costNok = qty > 0 && pn != null ? qty * pn : perName;
+      return { ticker: t, qty, theme: THEME_OF[t] || 'Other', costNok };
+    });
+    const investedNok = holdings.reduce((s, h) => s + h.costNok, 0);
+    const cashNok = Math.max(0, TOTAL_AUM - investedNok);
+    const actions: RebalanceAction[] = holdings.map((h) => {
+      const sig = quantModel.signals.find((s) => s.ticker === h.ticker);
+      return { text: `Bought ${h.ticker}`, detail: sig?.reason || 'Selected by the factor model', dir: 1 };
+    });
+    const transactions: LedgerTransaction[] = holdings.filter((h) => h.qty > 0).map((h) => {
+      const isOslo = STOCK_YAHOO[h.ticker]?.endsWith('.OL') ?? false;
+      return {
+        date: todayLabel(), side: 'BUY', ticker: h.ticker, qty: h.qty,
+        price: nativePriceFor(h.ticker) ?? h.costNok / h.qty, priceCcy: isOslo ? 'NOK' : 'USD',
+        account: isOslo ? 'Aksjesparekonto' : 'Investeringskonto',
+      };
+    });
+    setLedger({
+      inceptionDate: todayLabel(),
+      holdings,
+      cashNok,
+      log: [{
+        date: todayLabel(),
+        changes: holdings.length ? `Initial allocation: ${holdings.map((h) => h.ticker).join(', ')}` : 'Initial allocation — cash only',
+        reasoning: 'First allocation, built from today’s live momentum/trend/low-volatility/value/quality factor scores.',
+        actions,
+      }],
+      navHistory: [{ date: todayISO, totalValue: TOTAL_AUM }],
+      transactions,
+    });
+    // Deliberately narrow deps: this only ever runs once, the moment the model first becomes ready.
+  }, [ledger, quantModel.ready]);
+
+  const POSITIONS: Position[] = (ledger?.holdings ?? []).map((h) => ({
+    ticker: h.ticker, qty: h.qty, theme: h.theme, fallbackNok: h.costNok, costNok: h.costNok,
+  }));
+  const CASH_NOK = ledger?.cashNok ?? 0;
   const THEME_COLORS: Record<string, string> = {
     Energy: '#3DBB84',
     Defence: '#7C5CFF',
@@ -547,13 +637,112 @@ export default function Terminal() {
     Seafood: '#B85C54',
     Financials: '#5B8DBE',
     Telecom: '#9A7FD1',
+    Industrials: '#C77D3D',
+    Shipping: '#3D8AC7',
+    Consumer: '#8AAE4E',
     Cash: '#3A414B',
   };
   const CCY: Record<string, 'NOK' | 'USD' | 'Mixed'> = {
     EQNR: 'NOK', KOG: 'NOK', AKRBP: 'NOK', NHY: 'NOK', YAR: 'NOK', MOWI: 'NOK', DNB: 'NOK', TEL: 'NOK', SALM: 'NOK',
+    TOM: 'NOK', FRO: 'NOK', ORK: 'NOK', STB: 'NOK',
     LMT: 'USD', XOM: 'USD', NVDA: 'USD', GLOBAL: 'Mixed',
   };
   const port = computePortfolio(live, POSITIONS, CASH_NOK);
+
+  // Once-a-day: accrue interest on idle cash at the live Norges Bank policy rate and take a
+  // real NAV snapshot (rather than a fabricated equity curve) so a genuine, if sparse,
+  // performance history builds up across the days the app is actually opened.
+  useEffect(() => {
+    if (!ledger) return;
+    const last = ledger.navHistory[ledger.navHistory.length - 1];
+    if (last && last.date === todayISO) return;
+    const daysElapsed = last ? Math.max(1, Math.round((new Date(todayISO).getTime() - new Date(last.date).getTime()) / 86400000)) : 0;
+    const rate = (macro.policyRate ?? 4.25) / 100;
+    const accruedCash = daysElapsed > 0 ? ledger.cashNok * Math.pow(1 + rate / 365, daysElapsed) : ledger.cashNok;
+    const holdingsValueNow = ledger.holdings.reduce((s, h) => {
+      const pn = priceNokFor(h.ticker);
+      return s + (h.qty > 0 && pn != null ? h.qty * pn : h.costNok);
+    }, 0);
+    setLedger({ ...ledger, cashNok: accruedCash, navHistory: [...ledger.navHistory, { date: todayISO, totalValue: holdingsValueNow + accruedCash }] });
+  }, [ledger, todayISO]);
+
+  // Rebalance only trades names entering or leaving the model's current selection — it doesn't
+  // force existing holdings back to exact equal-weight, so cost basis for unchanged positions
+  // (and therefore their real gain/loss) stays intact rather than being reset on every click.
+  const runRebalance = () => {
+    if (!ledger || !quantModel.ready) return;
+    const targetTickers = rankByLiveScore(qmOpts.topN ?? 5, qmOpts.scoreThreshold ?? 0);
+    const targetSet = new Set(targetTickers);
+    const prevMap = new Map(ledger.holdings.map((h) => [h.ticker, h] as const));
+    const kept = ledger.holdings.filter((h) => targetSet.has(h.ticker));
+    const sold = ledger.holdings.filter((h) => !targetSet.has(h.ticker));
+    const newTickers = targetTickers.filter((t) => !prevMap.has(t));
+
+    if (sold.length === 0 && newTickers.length === 0) {
+      window.alert('No changes — current holdings already match the model.');
+      return;
+    }
+
+    let cash = ledger.cashNok;
+    const actions: RebalanceAction[] = [];
+    const newTransactions: LedgerTransaction[] = [];
+    for (const h of sold) {
+      const pn = priceNokFor(h.ticker);
+      const proceeds = pn != null ? h.qty * pn : h.costNok;
+      cash += proceeds;
+      actions.push({ text: `Sold ${h.ticker}`, detail: `${fmtNum(proceeds, 0)} NOK`, dir: -1 });
+      const isOslo = STOCK_YAHOO[h.ticker]?.endsWith('.OL') ?? false;
+      newTransactions.push({
+        date: todayLabel(), side: 'SELL', ticker: h.ticker, qty: h.qty,
+        price: nativePriceFor(h.ticker) ?? h.costNok / h.qty, priceCcy: isOslo ? 'NOK' : 'USD',
+        account: isOslo ? 'Aksjesparekonto' : 'Investeringskonto',
+      });
+    }
+
+    const keptValue = kept.reduce((s, h) => {
+      const pn = priceNokFor(h.ticker);
+      return s + (pn != null ? h.qty * pn : h.costNok);
+    }, 0);
+    const currentTotal = keptValue + cash;
+    const cashFrac = targetTickers.length > 0 ? CASH_FRACTION[risk] : 1;
+    const investedTarget = Math.max(0, currentTotal * (1 - cashFrac));
+    const perName = targetTickers.length > 0 ? investedTarget / targetTickers.length : 0;
+
+    const newHoldings: LedgerHolding[] = newTickers.map((t) => {
+      const pn = priceNokFor(t);
+      const qty = pn && pn > 0 ? Math.max(1, Math.round(perName / pn)) : 0;
+      const costNok = qty > 0 && pn != null ? qty * pn : perName;
+      cash -= costNok;
+      const sig = quantModel.signals.find((s) => s.ticker === t);
+      actions.push({ text: `Bought ${t}`, detail: sig?.reason || 'Selected by the factor model', dir: 1 });
+      if (qty > 0) {
+        const isOslo = STOCK_YAHOO[t]?.endsWith('.OL') ?? false;
+        newTransactions.push({
+          date: todayLabel(), side: 'BUY', ticker: t, qty,
+          price: nativePriceFor(t) ?? costNok / qty, priceCcy: isOslo ? 'NOK' : 'USD',
+          account: isOslo ? 'Aksjesparekonto' : 'Investeringskonto',
+        });
+      }
+      return { ticker: t, qty, theme: THEME_OF[t] || 'Other', costNok };
+    });
+
+    const changesLabel = [...newTickers.map((t) => `+${t}`), ...sold.map((h) => `−${h.ticker}`)].join(' ');
+    setLedger({
+      ...ledger,
+      holdings: [...kept, ...newHoldings],
+      cashNok: Math.max(0, cash),
+      transactions: [...ledger.transactions, ...newTransactions],
+      log: [
+        {
+          date: todayLabel(),
+          changes: changesLabel,
+          reasoning: `Rebalanced to the model's current top ${targetTickers.length || (qmOpts.topN ?? 5)} name(s) for the ${risk} risk level.`,
+          actions,
+        },
+        ...ledger.log,
+      ],
+    });
+  };
   const sinceIncStr = (port.sinceInception >= 0 ? '+' : '') + port.sinceInception.toFixed(1) + '%';
   // Weight pairs (fraction of total portfolio value) for the real risk engine.
   const riskPairs = port.rows
@@ -808,19 +997,33 @@ export default function Terminal() {
       };
     });
 
-  // Portfolio inception is today, so the log is simply today's initial allocation —
-  // not a fabricated multi-month trade history.
-  const portfolioLog = POSITIONS.filter((p) => p.qty > 0).map((p) => {
-    const ah = aiHoldings.find((h) => h.ticker === p.ticker);
-    const pn = localPrice(p.ticker);
-    const isUsd = base[p.ticker]?.cur === 'USD';
-    const priceNum = pn ?? p.fallbackNok / p.qty;
-    return {
-      date: todayLabel(), side: 'BUY', ticker: p.ticker, name: ah?.name || p.ticker,
-      qty: `+${p.qty}`, price: (isUsd ? '$' : '') + fmtNum(priceNum, 2),
-      account: ah?.ask ? 'Aksjesparekonto' : 'Investeringskonto',
-    };
-  }).map((t) => ({ ...t, sideEl: side(t.side) }));
+  // Real transaction history from the persisted ledger (newest first) — not a re-derived
+  // snapshot of current holdings, so it stays correct across multiple real rebalances.
+  const portfolioLog = (ledger?.transactions ?? []).slice().reverse().map((t) => ({
+    date: t.date, side: t.side, ticker: t.ticker, name: base[t.ticker]?.name || t.ticker,
+    qty: `${t.side === 'BUY' ? '+' : '−'}${t.qty}`,
+    price: (t.priceCcy === 'USD' ? '$' : '') + fmtNum(t.price, 2),
+    account: t.account,
+  })).map((t) => ({ ...t, sideEl: side(t.side) }));
+
+  const exportPortfolioCsv = () => {
+    const header = ['Date', 'Side', 'Ticker', 'Name', 'Qty', 'Price', 'Currency', 'Account'];
+    const escape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const rows = (ledger?.transactions ?? []).map((t) => [
+      t.date, t.side, t.ticker, base[t.ticker]?.name || t.ticker,
+      String(t.qty), t.price.toFixed(2), t.priceCcy, t.account,
+    ]);
+    const csv = [header, ...rows].map((r) => r.map(escape).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nordlys-portfolio-log-${todayISO}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const th = thesis()[stock as string];
   const sDrivers = th ? th.drivers.map((d) => ({ ...d, sentEl: sentBadge(d.sent) })) : [];
@@ -929,27 +1132,31 @@ export default function Terminal() {
 
   const rbBase = 'flex:0 0 auto; border:1px solid #23272E; border-radius:8px; padding:8px 11px; cursor:pointer;';
   const rbActive = 'flex:0 0 auto; border:1px solid #7C5CFF; background:#181233; border-radius:8px; padding:8px 11px; cursor:pointer;';
-  // The portfolio's inception is today, so there is no real rebalance history yet —
-  // this is the one true event: the initial allocation, built from today's live signals.
-  const rebalData = [
-    { date: todayLabel(), changes: 'Initial allocation', delta: null, trigType: 'Inception',
-      condition: 'model cold-start from today’s macro, geopolitical & factor signal weights',
-      reasoning: 'First allocation. The model seeded the portfolio from today’s baseline macro & geopolitical signal weights and the systematic momentum/trend/low-volatility factor scores, establishing the current theme tilts. No rebalance history exists yet — future rebalances will appear here as the model acts.',
-      actions: [{ dir: 0, text: 'Initial allocation', detail: `${(100 - port.cashPct).toFixed(1)}% invested` }] },
-  ];
-  const rebalEvents = rebalData.map((rb, i) => ({
-    date: rb.date, changes: rb.changes, deltaEl: deltaBadge(rb.delta),
+  // Real rebalance log from the persisted ledger — one entry for the initial allocation, plus
+  // one per "Rebalance now" click since. Newest first; the oldest entry is always inception.
+  const rebalLog = ledger?.log ?? [];
+  const rebalEvents = rebalLog.map((rb, i) => ({
+    date: rb.date, changes: rb.changes, deltaEl: deltaBadge(null),
     cardStyle: rbEvent === i ? rbActive : rbBase,
     select: () => setRbEvent((prev) => (prev === i ? null : i)),
   }));
-  const rbSelRaw = rbEvent != null ? rebalData[rbEvent] : null;
+  const rbSelRaw = rbEvent != null ? rebalLog[rbEvent] : null;
+  const isInceptionEntry = rbSelRaw != null && rbSelRaw === rebalLog[rebalLog.length - 1];
   const rbSel = rbSelRaw
     ? {
-        date: rbSelRaw.date, trigType: rbSelRaw.trigType, condition: rbSelRaw.condition, reasoning: rbSelRaw.reasoning,
-        deltaEl: deltaBadge(rbSelRaw.delta),
+        date: rbSelRaw.date,
+        trigType: isInceptionEntry ? 'Inception' : 'Manual rebalance',
+        condition: isInceptionEntry ? 'Model cold-start from today’s live factor scores' : 'Triggered manually via “Rebalance now”',
+        reasoning: rbSelRaw.reasoning,
+        deltaEl: deltaBadge(null),
         actions: rbSelRaw.actions.map((a) => ({ text: a.text, detail: a.detail, dotEl: dot(a.dir) })),
       }
-    : { date: '', trigType: '', condition: '', reasoning: '', deltaEl: null, actions: [] as { text: string; detail: string; dotEl: React.ReactNode }[] };
+    : { date: '', trigType: '', condition: '', reasoning: '', deltaEl: deltaBadge(null), actions: [] as { text: string; detail: string; dotEl: React.ReactNode }[] };
+  // Real, if sparse, equity curve from daily NAV snapshots (recorded once per calendar day the
+  // app is opened) — not a fabricated multi-month chart.
+  const navPath = ledger && ledger.navHistory.length >= 2
+    ? buildChartPath(ledger.navHistory.map((n) => n.totalValue), 720, 200, 15, 10)
+    : null;
 
   // Live sector exposure (from the portfolio's theme allocation, ex-cash).
   const sectorExp = port.themeAlloc
@@ -1301,7 +1508,7 @@ export default function Terminal() {
   const isAI = tab === 'ai', isRisk = tab === 'risk', isFx = tab === 'fx', isAttr = tab === 'attr', isIns = tab === 'ins', isBt = tab === 'bt';
 
   const rbOpen = rbEvent != null;
-  const convScore = rc.score, convTilt = rc.tilt, convNet = rc.net, convStance = rc.stance, cashPct = rc.cash, riskNote = rc.note;
+  const convScore = rc.score, convTilt = rc.tilt, convNet = rc.net, convStance = rc.stance, riskNote = rc.note;
   const riskConsStyle = risk === 'conservative' ? segOn : segBase;
   const riskBalStyle = risk === 'balanced' ? segOn : segBase;
   const riskAggStyle = risk === 'aggressive' ? segOn : segBase;
@@ -1770,9 +1977,9 @@ export default function Terminal() {
         </div>
         <div style={css("flex:1;")}></div>
         <div style={css("display:flex; flex-direction:column; align-items:flex-end; gap:8px;")}>
-          <button style={css("border:none; background:linear-gradient(135deg,#7C5CFF,#4B33C7); color:#fff; font-size:12.5px; font-weight:500; padding:9px 16px; border-radius:8px; cursor:pointer; font-family:inherit;")}>↻ Rebalance now</button>
+          <button onClick={runRebalance} disabled={!quantModel.ready} style={css(`border:none; background:${quantModel.ready ? 'linear-gradient(135deg,#7C5CFF,#4B33C7)' : '#2A2F37'}; color:#fff; font-size:12.5px; font-weight:500; padding:9px 16px; border-radius:8px; cursor:${quantModel.ready ? 'pointer' : 'not-allowed'}; font-family:inherit;`)}>↻ Rebalance now</button>
           <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11px; color:#5B626C;")}>
-            <span>Last run {clock.time}</span>
+            <span>Last run {ledger?.log[0]?.date ?? '—'}</span>
             <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:7px;height:7px;border-radius:50%;background:#3DBB84;box-shadow:0 0 0 3px rgba(14,138,95,0.18);")}></span>Nordnet · live prices</span>
           </div>
         </div>
@@ -1791,10 +1998,10 @@ export default function Terminal() {
 
       
       <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Portfolio value</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>NOK {fmtNum(port.totalValue, 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.sinceInception)}; margin-top:3px;`)}>{sinceIncStr} since inception</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Portfolio value</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{ledger ? `NOK ${fmtNum(port.totalValue, 0)}` : 'Loading…'}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.sinceInception)}; margin-top:3px;`)}>{ledger ? `${sinceIncStr} since inception` : ' '}</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Today</div><div className="mono" style={css(`font-size:23px; font-weight:600; color:${pctColor(port.totalToday)}; margin-top:5px;`)}>{port.totalToday >= 0 ? '+' : '−'}{fmtNum(Math.abs(port.totalToday), 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.todayPct)}; margin-top:3px;`)}>{pctText(port.todayPct)}</div></div>
         <div onClick={toggleConv} style={css("border:1px solid #3B2F63; border-radius:12px; background:#141026; padding:15px 17px; cursor:pointer;")} className="hov-c"><div style={css("display:flex; align-items:center; gap:6px;")}><span style={css("font-size:11.5px; color:#7C8492;")}>AI conviction</span><span className="mono" style={css("margin-left:auto; font-size:10px; color:#B79BFF;")}>{convToggleLabel}</span></div><div className="mono" style={css("font-size:23px; font-weight:600; color:#B79BFF; margin-top:5px;")}>{convScore}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>{convTilt}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Cash / next rebalance</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{cashPct}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>Auto · daily 08:00 &amp; on breaking signal</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Cash / next rebalance</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{ledger ? `${port.cashPct.toFixed(1)}%` : '—'}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>Manual — click “Rebalance now” to run the model</div></div>
       </div>
 
       
@@ -1866,11 +2073,19 @@ export default function Terminal() {
               <span className="mono" style={css("font-size:22px; font-weight:600; color:#F2F4F7;")}>{sinceIncStr}</span>
               <span className="mono" style={css("font-size:12px; color:#8A929E;")}>since inception · {todayLabel()}</span>
             </div>
-            <div style={css("border:1px dashed #23272E; border-radius:10px; padding:22px 18px; text-align:center; margin-bottom:4px;")}>
-              <div style={css("font-size:13px; color:#9AA1AC;")}>No performance history yet — the portfolio was built today.</div>
-              <div style={css("font-size:11.5px; color:#5B626C; margin-top:4px;")}>A real equity curve will accumulate here from today's rebalances onward.</div>
-            </div>
-            <div style={css("display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:10px;")}><span style={css("font-size:10.5px; color:#7C8492;")}>Click a rebalance to see what triggered it</span></div>
+            {navPath ? (
+              <svg viewBox="0 0 720 200" preserveAspectRatio="none" style={css("width:100%; height:190px; display:block; margin-bottom:8px;")}>
+                <defs><linearGradient id="navgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={navPath.up ? '#3DBB84' : '#E4655E'} stopOpacity="0.20"/><stop offset="100%" stopColor={navPath.up ? '#3DBB84' : '#E4655E'} stopOpacity="0"/></linearGradient></defs>
+                <path d={navPath.area} fill="url(#navgrad)"/>
+                <polyline points={navPath.line} fill="none" stroke={navPath.up ? '#3DBB84' : '#E4655E'} strokeWidth="2.2"/>
+              </svg>
+            ) : (
+              <div style={css("border:1px dashed #23272E; border-radius:10px; padding:22px 18px; text-align:center; margin-bottom:4px;")}>
+                <div style={css("font-size:13px; color:#9AA1AC;")}>No performance history yet — the portfolio was built today.</div>
+                <div style={css("font-size:11.5px; color:#5B626C; margin-top:4px;")}>A real equity curve accumulates here once per day you open the app.</div>
+              </div>
+            )}
+            <div style={css("display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:10px;")}><span style={css("font-size:10.5px; color:#7C8492;")}>{rebalEvents.length ? 'Click a rebalance to see what triggered it' : 'Loading…'}</span></div>
             <div style={css("display:flex; gap:8px; overflow-x:auto; padding-bottom:2px;")}>
               {rebalEvents.map((rb, i) => (<React.Fragment key={i}>
                 <div onClick={rb.select} style={css(rb.cardStyle)}><div className="mono" style={css("font-size:10.5px; color:#B79BFF;")}>◇ {rb.date}</div><div style={css("font-size:11px; color:#DDE1E7; margin-top:2px;")}>{rb.changes}</div><div className="mono" style={css("font-size:10px; margin-top:1px;")}>{rb.deltaEl}</div></div>
@@ -1939,11 +2154,14 @@ export default function Terminal() {
               <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Portfolio log</span>
               <span className="mono" style={css("font-size:10.5px; color:#5B626C;")}>executed transactions</span>
               <div style={css("flex:1;")}></div>
-              <span className="mono" style={css("font-size:10.5px; color:#6FA8FF; cursor:pointer;")}>Export CSV</span>
+              <span onClick={exportPortfolioCsv} className="mono" style={css("font-size:10.5px; color:#6FA8FF; cursor:pointer;")}>Export CSV</span>
             </div>
             <div className="mono" style={css("display:grid; grid-template-columns:78px 62px 1.7fr 0.9fr 1fr 1.3fr; gap:10px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
               <span>Date</span><span>Side</span><span>Instrument</span><span style={css("text-align:right;")}>Qty</span><span style={css("text-align:right;")}>Price</span><span>Account</span>
             </div>
+            {portfolioLog.length === 0 && (
+              <div style={css("padding:16px 18px; font-size:12.5px; color:#5B626C;")}>Loading…</div>
+            )}
             {portfolioLog.map((t, i) => (<React.Fragment key={i}>
               <div style={css("display:grid; grid-template-columns:78px 62px 1.7fr 0.9fr 1fr 1.3fr; gap:10px; align-items:center; padding:10px 18px; border-bottom:1px solid #191D23;")}>
                 <span className="mono" style={css("font-size:12px; color:#9AA1AC;")}>{t.date}</span>
@@ -2419,7 +2637,25 @@ export default function Terminal() {
             <span style={css("font-size:11px; color:#9C90C0; line-height:1.4;")}>{s.reason}</span>
           </div>
         </React.Fragment>))}
-        <div style={css("font-size:11px; color:#6F6590; line-height:1.5; margin-top:12px;")}>Complementary to the backtest above: instead of the portfolio's fixed current weights, this systematically re-picks the top {qmTopN} of the 12 tracked names every 4 weeks by composite score (bar and position count set by the AI risk level above), with a modelled 0.05% turnover cost. Small universe, ~4–5 years of history, no out-of-sample validation — illustrative of a systematic approach, not a verified edge, and not investment advice.</div>
+        {quantModel.splitValidation && (
+          <div style={css("margin-top:16px; border-top:1px solid #221B38; padding-top:14px;")}>
+            <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:10px;")}>
+              <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#8A78B8; font-weight:600;")}>Out-of-sample check</span>
+              <span style={css("font-size:11px; color:#6F6590;")}>same rule, run independently on each half of the history</span>
+            </div>
+            <div style={css("display:grid; grid-template-columns:1fr 1fr; gap:12px;")}>
+              {([{ label: 'First half', m: quantModel.splitValidation.firstHalf }, { label: 'Second half', m: quantModel.splitValidation.secondHalf }] as const).map((h, i) => (
+                <div key={i} style={css("border:1px solid #2A2440; border-radius:10px; background:#161029; padding:11px 13px;")}>
+                  <div style={css("font-size:10.5px; color:#8A78B8; margin-bottom:6px;")}>{h.label}</div>
+                  <div className="mono" style={css("display:flex; justify-content:space-between; font-size:12.5px; color:#F2F4F7;")}><span>CAGR</span><span style={css(`color:${h.m.cagr >= 0 ? '#3DBB84' : '#E4655E'};`)}>{pctStr(h.m.cagr)}</span></div>
+                  <div className="mono" style={css("display:flex; justify-content:space-between; font-size:12.5px; color:#F2F4F7; margin-top:4px;")}><span>Sharpe</span><span>{h.m.sharpe.toFixed(2)}</span></div>
+                  <div className="mono" style={css("display:flex; justify-content:space-between; font-size:12.5px; color:#F2F4F7; margin-top:4px;")}><span>Max drawdown</span><span style={css("color:#E4655E;")}>{pctStr(h.m.maxDrawdown)}</span></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={css("font-size:11px; color:#6F6590; line-height:1.5; margin-top:12px;")}>Complementary to the backtest above: instead of the portfolio's fixed current weights, this systematically re-picks the top {qmTopN} of the 12 tracked names every 4 weeks by composite score (bar and position count set by the AI risk level above), with a modelled 0.05% turnover cost. Small universe, ~4–5 years of history{quantModel.splitValidation ? ' — split in half above as a basic out-of-sample check' : ', not enough history yet for an out-of-sample split'} — illustrative of a systematic approach, not a verified edge, and not investment advice.</div>
       </div>
     </div>
     </>)}

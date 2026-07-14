@@ -10,7 +10,7 @@ const BENCH = 'OSEBX.OL';
 // that market's local open time), so US and Oslo Bors tickers never share a raw timestamp even on
 // the same trading day. Bucketing by calendar date (UTC) instead lets a mixed-exchange portfolio's
 // series actually intersect.
-function dateKey(epochSeconds) {
+export function dateKey(epochSeconds) {
   return new Date(epochSeconds * 1000).toISOString().slice(0, 10);
 }
 

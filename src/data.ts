@@ -17,6 +17,10 @@ export const STOCK_YAHOO: Record<string, string> = {
   LMT: 'LMT',
   XOM: 'XOM',
   NVDA: 'NVDA',
+  TOM: 'TOM.OL',
+  FRO: 'FRO.OL',
+  ORK: 'ORK.OL',
+  STB: 'STB.OL',
 };
 
 // Index / commodity / FX strip.
@@ -247,6 +251,7 @@ export interface Position {
   qty: number; // shares held (0 for funds with no live price)
   theme: string;
   fallbackNok: number; // designed NOK value, used when no live price is available
+  costNok?: number; // persisted cost basis (e.g. from a saved ledger); defaults to today's value
 }
 
 export interface PortfolioRow {
@@ -274,8 +279,9 @@ export interface Portfolio {
 
 // Values positions at live prices (USD holdings converted via USD/NOK), and
 // derives totals, today's P&L, since-inception return and theme allocation.
-// The portfolio's inception is today: cost basis is today's live value, so
-// since-inception starts at 0% and only accrues from real performance going forward.
+// Cost basis is whatever the caller persisted (e.g. a saved portfolio ledger); a
+// position with no persisted cost basis defaults to today's value, so a brand
+// new holding starts at 0% since inception rather than a fabricated return.
 export function computePortfolio(live: QuoteMap, positions: Position[], cashNok: number): Portfolio {
   const usdnok = live['USDNOK=X']?.price ?? 10.61;
   const quoteOf = (t: string): Quote | undefined => {
@@ -292,7 +298,7 @@ export function computePortfolio(live: QuoteMap, positions: Position[], cashNok:
     const valueNok = p.qty > 0 && pn != null ? p.qty * pn : p.fallbackNok;
     const chgPct = quoteOf(p.ticker)?.changePct ?? 0;
     const todayNok = (valueNok * chgPct) / 100;
-    const costNok = valueNok;
+    const costNok = p.costNok ?? valueNok;
     return { ticker: p.ticker, theme: p.theme, valueNok, todayNok, chgPct, costNok };
   });
   const holdingsValue = rows.reduce((s, r) => s + r.valueNok, 0);

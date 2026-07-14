@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { STOCK_YAHOO } from '../data';
 import { alignSeries, type RawSeries } from './align';
-import { runBacktest, type BacktestResult, type BacktestOptions } from './backtest';
+import { runBacktest, runSplitValidation, type BacktestResult, type BacktestOptions, type SplitValidation } from './backtest';
+import { zScores } from './factors';
 
 const BENCHMARK_SYMBOL = 'OSEBX.OL';
 const REFRESH_MS = 15 * 60_000;
@@ -20,6 +21,7 @@ const NAMES: Record<string, string> = {
   EQNR: 'Equinor', DNB: 'DNB Bank', TEL: 'Telenor', NHY: 'Norsk Hydro', MOWI: 'Mowi',
   YAR: 'Yara International', AKRBP: 'Aker BP', KOG: 'Kongsberg Gruppen', SALM: 'SalMar',
   LMT: 'Lockheed Martin', XOM: 'Exxon Mobil', NVDA: 'NVIDIA',
+  TOM: 'Tomra Systems', FRO: 'Frontline', ORK: 'Orkla', STB: 'Storebrand',
 };
 
 export interface QuantSignalRow {
@@ -29,6 +31,10 @@ export interface QuantSignalRow {
   target: number | null;
   upsidePct: number;
   reason: string;
+  // Composite momentum/trend/low-vol score blended with today's value/quality snapshot
+  // (P/B and ROE aren't backtestable — Yahoo's free consensus data has no history — so
+  // this only affects live selection/signals, never the historical backtest above).
+  liveScore: number | null;
 }
 
 export interface ConvictionFactor {
@@ -50,6 +56,11 @@ export interface QuantModel {
   backtest: BacktestResult | null;
   signals: QuantSignalRow[];
   conviction: Conviction | null;
+  // ticker -> blended live score used to actually pick holdings (see QuantSignalRow.liveScore)
+  liveScores: Record<string, number | null>;
+  // First-half vs second-half performance of the same rule — an out-of-sample consistency
+  // check, null if there isn't enough history to split.
+  splitValidation: SplitValidation | null;
 }
 
 async function getJSON(url: string): Promise<unknown | null> {
@@ -74,13 +85,21 @@ async function fetchSeries(symbol: string): Promise<RawSeries> {
 
 interface SummaryInfo {
   targetMean: number | null;
+  priceToBook: number | null;
+  returnOnEquity: number | null;
 }
 
 const CONVICTION_BASE = 30;
 const FACTOR_SCALE = 12;
 
-function buildConviction(backtest: BacktestResult, tickers: string[], buyThreshold: number): Conviction {
-  const selected = tickers.filter((t) => (backtest.latestScores[t]?.composite ?? -Infinity) > buyThreshold);
+function buildConviction(
+  backtest: BacktestResult,
+  tickers: string[],
+  buyThreshold: number,
+  liveScores: Record<string, number | null>,
+  valueQualityZ: Record<string, number | null>,
+): Conviction {
+  const selected = tickers.filter((t) => (liveScores[t] ?? -Infinity) > buyThreshold);
   const pool = selected.length > 0 ? selected : tickers;
 
   const avg = (sel: (t: string) => number | null) => {
@@ -90,9 +109,10 @@ function buildConviction(backtest: BacktestResult, tickers: string[], buyThresho
   const avgMomZ = avg((t) => backtest.latestScores[t]?.zMomentum ?? null);
   const avgTrendZ = avg((t) => backtest.latestScores[t]?.zTrend ?? null);
   const avgVolZ = avg((t) => backtest.latestScores[t]?.zVol ?? null);
-  const avgComposite = avg((t) => backtest.latestScores[t]?.composite ?? null);
+  const avgValueQuality = avg((t) => valueQualityZ[t] ?? null);
+  const avgLive = avg((t) => liveScores[t] ?? null);
 
-  const net = Math.round(avgComposite * 35);
+  const net = Math.round(avgLive * 35);
   const score = Math.max(0, Math.min(100, CONVICTION_BASE + net));
   const stance = score >= 65 ? 'Risk-on' : score <= 35 ? 'Cautious' : 'Neutral';
   const round1 = (v: number) => Math.round(v * FACTOR_SCALE * 10) / 10;
@@ -106,6 +126,7 @@ function buildConviction(backtest: BacktestResult, tickers: string[], buyThresho
       { label: '6-month momentum', why: `Average momentum z-score across ${scope}`, val: round1(avgMomZ) },
       { label: 'Trend (13/52-week)', why: `Average trend z-score across ${scope}`, val: round1(avgTrendZ) },
       { label: 'Low-volatility tilt', why: `Average low-vol z-score across ${scope} (inverted realized vol)`, val: round1(avgVolZ) },
+      { label: 'Value & quality', why: `Average P/B (inverted) + ROE z-score across ${scope} — today's snapshot only, not backtested`, val: round1(avgValueQuality) },
     ],
   };
 }
@@ -184,7 +205,7 @@ export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
   const { raw, error } = useRawMarketData();
 
   return useMemo<QuantModel>(() => {
-    if (!raw) return { ready: false, error, backtest: null, signals: [], conviction: null };
+    if (!raw) return { ready: false, error, backtest: null, signals: [], conviction: null, liveScores: {}, splitValidation: null };
 
     const tickers = Object.keys(STOCK_YAHOO);
     const opts = RISK_OPTIONS[riskLevel];
@@ -192,11 +213,29 @@ export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
     const { weekKeys, series, summary } = raw;
     const backtest = runBacktest(weekKeys, series, tickers, BENCHMARK_SYMBOL, opts);
 
+    // Value (inverted P/B) + quality (ROE) cross-sectional z-scores, today's snapshot only —
+    // Yahoo's free consensus data has no history, so this can't be run through the backtest
+    // engine above; it only tilts which names get picked/labelled right now.
+    const pbZ = zScores(tickers.map((t) => summary[STOCK_YAHOO[t]]?.priceToBook ?? null)).map((z) => (z == null ? null : -z));
+    const roeZ = zScores(tickers.map((t) => summary[STOCK_YAHOO[t]]?.returnOnEquity ?? null));
+    const valueQualityZ: Record<string, number | null> = {};
+    tickers.forEach((t, i) => {
+      const parts = [pbZ[i], roeZ[i]].filter((v): v is number => v != null);
+      valueQualityZ[t] = parts.length > 0 ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
+    });
+
+    const liveScores: Record<string, number | null> = {};
+    tickers.forEach((t) => {
+      const composite = backtest.latestScores[t]?.composite ?? null;
+      const vq = valueQualityZ[t];
+      liveScores[t] = composite == null ? vq : vq == null ? composite : composite * 0.7 + vq * 0.3;
+    });
+
     const signals: QuantSignalRow[] = tickers.map((t) => {
       const snap = backtest.latestScores[t];
-      const composite = snap?.composite ?? null;
+      const liveScore = liveScores[t];
       const act: QuantSignalRow['act'] =
-        composite == null ? 'HOLD' : composite > buyThreshold ? 'BUY' : composite < -buyThreshold ? 'SELL' : 'HOLD';
+        liveScore == null ? 'HOLD' : liveScore > buyThreshold ? 'BUY' : liveScore < -buyThreshold ? 'SELL' : 'HOLD';
 
       const target = summary[STOCK_YAHOO[t]]?.targetMean ?? null;
       const lastClose = series[t][series[t].length - 1];
@@ -206,12 +245,14 @@ export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
       if (snap?.momentum != null) parts.push(`${snap.momentum >= 0 ? '+' : ''}${(snap.momentum * 100).toFixed(1)}% 6m momentum`);
       if (snap?.trend != null) parts.push(`${snap.trend >= 0 ? 'above' : 'below'} 13/52-week trend`);
       if (snap?.vol != null) parts.push(`${(snap.vol * 100).toFixed(0)}% realized vol`);
+      if (valueQualityZ[t] != null) parts.push(`${valueQualityZ[t]! >= 0 ? '+' : ''}${valueQualityZ[t]!.toFixed(1)} value/quality z`);
       const reason = parts.length > 0 ? parts.join(' · ') : 'Insufficient price history for a signal';
 
-      return { ticker: t, name: NAMES[t] ?? t, act, target, upsidePct, reason };
+      return { ticker: t, name: NAMES[t] ?? t, act, target, upsidePct, reason, liveScore };
     });
 
-    const conviction = buildConviction(backtest, tickers, buyThreshold);
-    return { ready: true, error: null, backtest, signals, conviction };
+    const conviction = buildConviction(backtest, tickers, buyThreshold, liveScores, valueQualityZ);
+    const splitValidation = runSplitValidation(weekKeys, series, tickers, BENCHMARK_SYMBOL, opts);
+    return { ready: true, error: null, backtest, signals, conviction, liveScores, splitValidation };
   }, [raw, error, riskLevel]);
 }
