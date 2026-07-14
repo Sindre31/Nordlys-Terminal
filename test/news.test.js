@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decode, tag, attr } from './news.js';
+import { decode, tag, attr } from '../api/news.js';
 
 describe('decode', () => {
   it('unwraps CDATA and trims', () => {

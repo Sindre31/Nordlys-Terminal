@@ -3,6 +3,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts', 'api/**/*.test.js'],
+    // API-handler tests live in test/ (not api/) so Vercel doesn't treat them as serverless
+    // functions and blow past the deployment's function limit.
+    include: ['src/**/*.test.ts', 'test/**/*.test.js'],
   },
 });

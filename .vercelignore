@@ -1,0 +1,6 @@
+# Keep test files out of the Vercel deployment. Anything under api/ becomes a serverless
+# function, and test files there would each count against the plan's function limit (which is
+# how a prior deploy failed). Tests run in CI, never on Vercel.
+*.test.ts
+*.test.js
+test

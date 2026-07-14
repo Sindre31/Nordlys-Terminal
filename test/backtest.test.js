@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { monthKey } from './backtest.js';
+import { monthKey } from '../api/backtest.js';
 
 describe('monthKey', () => {
   it('regression: an Oslo Bors month-end bar and a NYSE/Nasdaq bar just after UTC midnight land in the same month', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dateKey } from './history.js';
+import { dateKey } from '../api/history.js';
 
 describe('dateKey', () => {
   it('buckets by UTC calendar date regardless of time of day', () => {
