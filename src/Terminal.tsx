@@ -384,6 +384,7 @@ interface RebalanceLogEntry {
 interface NavPoint {
   date: string;
   totalValue: number;
+  bench: number | null; // OSEBX level on that date, for a rebased benchmark line (null if unavailable)
 }
 interface LedgerTransaction {
   date: string;
@@ -394,13 +395,34 @@ interface LedgerTransaction {
   priceCcy: 'NOK' | 'USD';
   account: string;
 }
+// Bump whenever the ledger shape changes in a way old saved data can't satisfy. A persisted
+// ledger with a different (or missing) version is discarded on load and re-seeded fresh, so a
+// schema change can never white-screen a returning user.
+export const LEDGER_VERSION = 1;
 interface PortfolioLedger {
+  version: number;
   inceptionDate: string;
   holdings: LedgerHolding[];
   cashNok: number;
   log: RebalanceLogEntry[];
   navHistory: NavPoint[];
   transactions: LedgerTransaction[];
+}
+
+// Validates a value parsed from localStorage actually matches the current ledger shape before
+// we trust it. Guards against schema drift and partially-written/corrupt data.
+export function isValidLedger(v: unknown): v is PortfolioLedger {
+  if (typeof v !== 'object' || v === null) return false;
+  const l = v as Record<string, unknown>;
+  return (
+    l.version === LEDGER_VERSION &&
+    typeof l.inceptionDate === 'string' &&
+    typeof l.cashNok === 'number' &&
+    Array.isArray(l.holdings) &&
+    Array.isArray(l.log) &&
+    Array.isArray(l.navHistory) &&
+    Array.isArray(l.transactions)
+  );
 }
 
 export default function Terminal() {
@@ -577,7 +599,10 @@ export default function Terminal() {
   const selectedTickers = quantModel.ready ? rankByLiveScore(qmOpts.topN ?? 5, qmOpts.scoreThreshold ?? 0) : [];
   const todayISO = new Date().toISOString().slice(0, 10);
 
-  const [ledger, setLedger] = useState<PortfolioLedger | null>(() => loadLS<PortfolioLedger | null>('nordlys_portfolio_ledger', null));
+  const [ledger, setLedger] = useState<PortfolioLedger | null>(() => {
+    const saved = loadLS<unknown>('nordlys_portfolio_ledger', null);
+    return isValidLedger(saved) ? saved : null; // discard incompatible/corrupt data → re-seed fresh
+  });
   useEffect(() => {
     if (ledger) localStorage.setItem('nordlys_portfolio_ledger', JSON.stringify(ledger));
   }, [ledger]);
@@ -609,6 +634,7 @@ export default function Terminal() {
       };
     });
     setLedger({
+      version: LEDGER_VERSION,
       inceptionDate: todayLabel(),
       holdings,
       cashNok,
@@ -618,7 +644,7 @@ export default function Terminal() {
         reasoning: 'First allocation, built from today’s live momentum/trend/low-volatility/value/quality factor scores.',
         actions,
       }],
-      navHistory: [{ date: todayISO, totalValue: TOTAL_AUM }],
+      navHistory: [{ date: todayISO, totalValue: TOTAL_AUM, bench: live['OSEBX.OL']?.price ?? null }],
       transactions,
     });
     // Deliberately narrow deps: this only ever runs once, the moment the model first becomes ready.
@@ -663,7 +689,7 @@ export default function Terminal() {
       const pn = priceNokFor(h.ticker);
       return s + (h.qty > 0 && pn != null ? h.qty * pn : h.costNok);
     }, 0);
-    setLedger({ ...ledger, cashNok: accruedCash, navHistory: [...ledger.navHistory, { date: todayISO, totalValue: holdingsValueNow + accruedCash }] });
+    setLedger({ ...ledger, cashNok: accruedCash, navHistory: [...ledger.navHistory, { date: todayISO, totalValue: holdingsValueNow + accruedCash, bench: live['OSEBX.OL']?.price ?? null }] });
   }, [ledger, todayISO]);
 
   // Rebalance only trades names entering or leaving the model's current selection — it doesn't
@@ -1162,10 +1188,46 @@ export default function Terminal() {
       }
     : { date: '', trigType: '', condition: '', reasoning: '', deltaEl: deltaBadge(null), actions: [] as { text: string; detail: string; dotEl: React.ReactNode }[] };
   // Real, if sparse, equity curve from daily NAV snapshots (recorded once per calendar day the
-  // app is opened) — not a fabricated multi-month chart.
-  const navPath = ledger && ledger.navHistory.length >= 2
-    ? buildChartPath(ledger.navHistory.map((n) => n.totalValue), 720, 200, 15, 10)
-    : null;
+  // app is opened) — not a fabricated multi-month chart. OSEBX is drawn as a second line,
+  // rebased to the portfolio's starting value, so "beating the index" becomes literally readable.
+  const NAV_W = 720, NAV_H = 200, NAV_PT = 15, NAV_PB = 10;
+  const navChart = (() => {
+    const hist = ledger?.navHistory ?? [];
+    if (hist.length < 2) return null;
+    const navVals = hist.map((n) => n.totalValue);
+    // Rebase the benchmark to the portfolio's starting NAV using the first snapshot that has one.
+    const baseBenchIdx = hist.findIndex((n) => n.bench != null);
+    const benchRebased: (number | null)[] = hist.map((n) =>
+      baseBenchIdx >= 0 && n.bench != null ? navVals[0] * (n.bench / hist[baseBenchIdx].bench!) : null,
+    );
+    const benchPts = benchRebased.filter((v): v is number => v != null);
+    const min = Math.min(...navVals, ...benchPts);
+    const max = Math.max(...navVals, ...benchPts);
+    const span = max - min || 1;
+    const innerH = NAV_H - NAV_PT - NAV_PB;
+    const xy = (i: number, v: number) => [(i / (hist.length - 1)) * NAV_W, NAV_PT + (1 - (v - min) / span) * innerH] as const;
+    const navCoords = navVals.map((v, i) => xy(i, v));
+    const navLine = navCoords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+    const navArea = `M${navCoords[0][0].toFixed(1)},${navCoords[0][1].toFixed(1)} ` +
+      navCoords.slice(1).map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join(' ') +
+      ` L${NAV_W},${NAV_H} L0,${NAV_H} Z`;
+    const benchLine = benchRebased
+      .map((v, i) => (v == null ? null : xy(i, v)))
+      .filter((c): c is readonly [number, number] => c != null)
+      .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+    const up = navVals[navVals.length - 1] >= navVals[0];
+    const benchVal = benchPts.length >= 2 ? benchLine : null;
+    // Portfolio vs benchmark return since inception (only when both are available).
+    const relStr = (() => {
+      if (baseBenchIdx < 0 || benchPts.length < 2) return null;
+      const navRet = navVals[navVals.length - 1] / navVals[0] - 1;
+      const lastBench = [...benchRebased].reverse().find((v) => v != null)!;
+      const benchRet = lastBench / navVals[0] - 1;
+      const diff = (navRet - benchRet) * 100;
+      return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}% vs OSEBX`;
+    })();
+    return { navLine, navArea, benchLine: benchVal, up, relStr };
+  })();
 
   // Live sector exposure (from the portfolio's theme allocation, ex-cash).
   const sectorExp = port.themeAlloc
@@ -2080,18 +2142,22 @@ export default function Terminal() {
               <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Rebalance history</span>
               <div style={css("flex:1;")}></div>
               <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11px; color:#9AA1AC;")}>
+                <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#3DBB84;")}></span>AI Portfolio</span>
+                <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#4E5661;")}></span>OSEBX</span>
                 <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("color:#B79BFF;")}>◇</span>Rebalance</span>
               </div>
             </div>
             <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:12px;")}>
               <span className="mono" style={css("font-size:22px; font-weight:600; color:#F2F4F7;")}>{sinceIncStr}</span>
               <span className="mono" style={css("font-size:12px; color:#8A929E;")}>since inception · {todayLabel()}</span>
+              {navChart?.relStr && <span className="mono" style={css(`font-size:12px; color:${navChart.relStr.startsWith('-') ? '#E4655E' : '#3DBB84'};`)}>{navChart.relStr}</span>}
             </div>
-            {navPath ? (
+            {navChart ? (
               <svg viewBox="0 0 720 200" preserveAspectRatio="none" style={css("width:100%; height:190px; display:block; margin-bottom:8px;")}>
-                <defs><linearGradient id="navgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={navPath.up ? '#3DBB84' : '#E4655E'} stopOpacity="0.20"/><stop offset="100%" stopColor={navPath.up ? '#3DBB84' : '#E4655E'} stopOpacity="0"/></linearGradient></defs>
-                <path d={navPath.area} fill="url(#navgrad)"/>
-                <polyline points={navPath.line} fill="none" stroke={navPath.up ? '#3DBB84' : '#E4655E'} strokeWidth="2.2"/>
+                <defs><linearGradient id="navgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={navChart.up ? '#3DBB84' : '#E4655E'} stopOpacity="0.20"/><stop offset="100%" stopColor={navChart.up ? '#3DBB84' : '#E4655E'} stopOpacity="0"/></linearGradient></defs>
+                <path d={navChart.navArea} fill="url(#navgrad)"/>
+                {navChart.benchLine && <polyline points={navChart.benchLine} fill="none" stroke="#4E5661" strokeWidth="1.8"/>}
+                <polyline points={navChart.navLine} fill="none" stroke={navChart.up ? '#3DBB84' : '#E4655E'} strokeWidth="2.2"/>
               </svg>
             ) : (
               <div style={css("border:1px dashed #23272E; border-radius:10px; padding:22px 18px; text-align:center; margin-bottom:4px;")}>
