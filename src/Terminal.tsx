@@ -528,14 +528,12 @@ export default function Terminal() {
     open: open(sym),
   }));
 
-  const bidAsk: Record<string, [string, string]> = {
-    EQNR: ['312.30', '312.50'], DNB: ['223.00', '223.20'], TEL: ['138.60', '138.75'], NHY: ['68.90', '68.95'], MOWI: ['194.20', '194.45'],
-    YAR: ['341.60', '342.00'], AKRBP: ['258.70', '259.10'], KOG: ['1 083', '1 085'], SALM: ['612.00', '613.00'],
-  };
+  // No free live source exposes real bid/ask (Yahoo's unauthenticated chart endpoint doesn't
+  // return it), so these show '—' rather than a fabricated number next to the live Last price.
   const watchFull = order.map((sym) => ({
     ticker: sym, name: S[sym].name, last: S[sym].last,
     chg: chgEl(S[sym].chg, 13),
-    bid: bidAsk[sym][0], ask: bidAsk[sym][1], vol: S[sym].vol, range: S[sym].range,
+    bid: '—', ask: '—', vol: S[sym].vol, range: S[sym].range,
     sparkEl: spark(S[sym].chg >= 0),
     open: open(sym),
   }));
@@ -981,7 +979,11 @@ export default function Terminal() {
   const sellN = analystLive ? analystDisplay.filter((r) => r.rating === 'Sell').length : 1;
 
   // ---- Earnings calendar + held-name reports (Yahoo calendarEvents) ----
-  const earningsRows = OSLO_SET.map((t) => ({ t, e: sumOf(t)?.earningsDate ?? null })).filter((x) => x.e) as { t: string; e: number }[];
+  // Yahoo's calendarEvents.earnings.earningsDate[0] sometimes only has the *last reported* date
+  // (no confirmed next one yet, common for smaller caps) rather than a genuinely upcoming one, so
+  // this filters to future dates only rather than showing a stale report as "upcoming".
+  const nowSec = Date.now() / 1000;
+  const earningsRows = OSLO_SET.map((t) => ({ t, e: sumOf(t)?.earningsDate ?? null })).filter((x) => x.e && x.e > nowSec) as { t: string; e: number }[];
   const calendarLive = earningsRows.length >= 3;
   const calendarDisplay = calendarLive
     ? earningsRows
@@ -1003,7 +1005,7 @@ export default function Terminal() {
   const heldReportSyms = ['EQNR', 'YAR', 'MOWI', 'AKRBP', 'KOG', 'NHY'];
   const heldReportsLive = heldReportSyms
     .map((t) => ({ t, e: sumOf(t)?.earningsDate ?? null }))
-    .filter((x) => x.e)
+    .filter((x) => x.e && x.e > nowSec)
     .sort((a, b) => (a.e as number) - (b.e as number))
     .slice(0, 4)
     .map((x) => ({ ticker: x.t, period: 'Q results', date: fmtDayMon(x.e).label, open: S[x.t] ? open(x.t) : undefined }));
@@ -1038,6 +1040,21 @@ export default function Terminal() {
     : null;
   const insiderBuys = insiderLive.filter((t) => t.side === 'BUY').length;
   const insiderSells = insiderLive.filter((t) => t.side === 'SELL').length;
+  const insiderUnclassified = insiderLive.length - insiderBuys - insiderSells;
+  // Newsweb's category-1102 listing gives a title/company/date per disclosure, not a parsed
+  // transaction value, and many real titles ("Mandatory Notification of Trade") don't say
+  // buy or sell — so a NOK net-flow or largest-transaction figure isn't derivable from this feed.
+  const insiderDisclosuresLabel = insiderLive.length
+    ? insiderUnclassified > 0
+      ? `last 45 days · Newsweb · ${insiderUnclassified} unclassified`
+      : 'last 45 days · Newsweb'
+    : '3:1 ratio';
+  const insiderSentiment = !insiderLive.length ? 'Bullish' : insiderBuys > insiderSells ? 'Bullish' : insiderSells > insiderBuys ? 'Bearish' : 'Mixed';
+  const insiderSentimentNote = !insiderLive.length
+    ? 'CEO/CFO buying cluster'
+    : insiderBuys === 0 && insiderSells === 0
+      ? 'no disclosures classified buy/sell'
+      : `${insiderBuys} buy vs ${insiderSells} sell disclosures`;
 
   // ---- Portfolio beta (weighted average of holdings' Yahoo betas) ----
   let betaNum = 0;
@@ -2097,10 +2114,10 @@ export default function Terminal() {
 
       
       <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Net insider flow · 30d</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+NOK 12.4m</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>net buying</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Buy / sell disclosures</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{insiderLive.length ? `${insiderBuys} / ${insiderSells}` : '6 / 2'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderLive.length ? 'last 45 days · Newsweb' : '3:1 ratio'}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sentiment</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>Bullish</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>CEO/CFO buying cluster</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Largest transaction</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>MOWI</div><div className="mono" style={css("font-size:11px; color:#E4655E; margin-top:2px;")}>−NOK 7.8m sell</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Net insider flow · 30d</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{insiderLive.length ? '—' : '+NOK 12.4m'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderLive.length ? 'no transaction value in feed' : 'net buying'}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Buy / sell disclosures</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{insiderLive.length ? `${insiderBuys} / ${insiderSells}` : '6 / 2'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderDisclosuresLabel}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sentiment</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{insiderSentiment}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderSentimentNote}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Largest transaction</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{insiderLive.length ? '—' : 'MOWI'}</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderLive.length ? 'no transaction value in feed' : '−NOK 7.8m sell'}</div></div>
       </div>
 
       

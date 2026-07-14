@@ -6,6 +6,14 @@
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 const BENCH = 'OSEBX.OL';
 
+// Daily bars from different exchanges land on different exact epoch seconds (each is stamped at
+// that market's local open time), so US and Oslo Bors tickers never share a raw timestamp even on
+// the same trading day. Bucketing by calendar date (UTC) instead lets a mixed-exchange portfolio's
+// series actually intersect.
+function dateKey(epochSeconds) {
+  return new Date(epochSeconds * 1000).toISOString().slice(0, 10);
+}
+
 async function fetchSeries(sym) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1y&interval=1d`;
   const r = await fetch(url, { headers: { 'User-Agent': UA } });
@@ -16,7 +24,7 @@ async function fetchSeries(sym) {
   const close = res?.indicators?.quote?.[0]?.close;
   if (!ts || !close) return null;
   const m = new Map();
-  for (let i = 0; i < ts.length; i++) if (close[i] != null) m.set(ts[i], close[i]);
+  for (let i = 0; i < ts.length; i++) if (close[i] != null) m.set(dateKey(ts[i]), close[i]);
   return m;
 }
 
@@ -53,7 +61,7 @@ export default async function handler(req, res) {
     const active = pairs.filter((p) => series[p.sym]);
     let ts = [...series[BENCH].keys()];
     for (const p of active) ts = ts.filter((t) => series[p.sym].has(t));
-    ts.sort((a, b) => a - b);
+    ts.sort(); // ISO date-string keys sort correctly lexicographically
     if (ts.length < 30) throw new Error('insufficient history');
 
     // Daily returns: portfolio (fixed current weights) and benchmark.
