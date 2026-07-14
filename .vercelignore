@@ -3,4 +3,9 @@
 # how a prior deploy failed). Tests run in CI, never on Vercel.
 *.test.ts
 *.test.js
+*.spec.ts
 test
+e2e
+playwright.config.ts
+playwright-report
+test-results

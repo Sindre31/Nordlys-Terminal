@@ -3,6 +3,8 @@
 // equity curves, headline metrics and annual returns from actual prices.
 // Input: ?symbols=EQNR.OL:0.15,KOG.OL:0.12,...&rf=4.25
 
+import { fetchWithTimeout } from '../lib/http.js';
+
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 const BENCH = 'OSEBX.OL';
 const COST = 0.0005; // 0.05% per-trade cost applied to monthly turnover
@@ -19,7 +21,7 @@ export function monthKey(epochSeconds) {
 
 async function fetchMonthly(sym) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=10y&interval=1mo`;
-  const r = await fetch(url, { headers: { 'User-Agent': UA } });
+  const r = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } });
   if (!r.ok) return null;
   const j = await r.json();
   const res = j?.chart?.result?.[0];

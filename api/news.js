@@ -4,6 +4,8 @@
 // DN / Finansavisen / Hegnar only expose paywalled (auth-gated) RSS, so they
 // can't be included from a free source.
 
+import { fetchWithTimeout } from '../lib/http.js';
+
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
 export function decode(v) {
@@ -31,7 +33,7 @@ export function attr(block, name, attrName) {
 
 async function fetchE24() {
   try {
-    const r = await fetch('https://e24.no/rss', { headers: { 'User-Agent': UA } });
+    const r = await fetchWithTimeout('https://e24.no/rss', { headers: { 'User-Agent': UA } });
     const xml = await r.text();
     const blocks = xml.match(/<item[\s\S]*?<\/item>/gi) || [];
     return blocks
@@ -52,7 +54,7 @@ async function fetchE24() {
 async function fetchNewsweb() {
   try {
     const fromDate = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
-    const r = await fetch(`https://api3.oslo.oslobors.no/v1/newsreader/list?limit=30&fromDate=${fromDate}`, {
+    const r = await fetchWithTimeout(`https://api3.oslo.oslobors.no/v1/newsreader/list?limit=30&fromDate=${fromDate}`, {
       headers: { 'User-Agent': UA },
     });
     const j = await r.json();

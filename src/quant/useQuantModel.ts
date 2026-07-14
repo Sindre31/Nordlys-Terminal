@@ -24,6 +24,16 @@ const NAMES: Record<string, string> = {
   TOM: 'Tomra Systems', FRO: 'Frontline', ORK: 'Orkla', STB: 'Storebrand',
 };
 
+// Per-name cross-sectional z-scores for each factor, so the model's pick is auditable rather
+// than a black box: the same numbers that feed liveScore, exposed for display. null = the factor
+// couldn't be computed for this name (e.g. no P/B from Yahoo, or too little price history).
+export interface FactorZ {
+  momentum: number | null; // 6-month price momentum, z-scored across the universe
+  trend: number | null; // 13/52-week trend
+  lowVol: number | null; // inverted realized volatility (higher = calmer)
+  valueQuality: number | null; // inverted P/B + ROE snapshot (today only, not backtested)
+}
+
 export interface QuantSignalRow {
   ticker: string;
   name: string;
@@ -35,6 +45,8 @@ export interface QuantSignalRow {
   // (P/B and ROE aren't backtestable — Yahoo's free consensus data has no history — so
   // this only affects live selection/signals, never the historical backtest above).
   liveScore: number | null;
+  // The factor z-scores behind liveScore, for an auditable breakdown in the UI.
+  factorZ: FactorZ;
 }
 
 export interface ConvictionFactor {
@@ -248,7 +260,14 @@ export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
       if (valueQualityZ[t] != null) parts.push(`${valueQualityZ[t]! >= 0 ? '+' : ''}${valueQualityZ[t]!.toFixed(1)} value/quality z`);
       const reason = parts.length > 0 ? parts.join(' · ') : 'Insufficient price history for a signal';
 
-      return { ticker: t, name: NAMES[t] ?? t, act, target, upsidePct, reason, liveScore };
+      const factorZ: FactorZ = {
+        momentum: snap?.zMomentum ?? null,
+        trend: snap?.zTrend ?? null,
+        lowVol: snap?.zVol ?? null,
+        valueQuality: valueQualityZ[t] ?? null,
+      };
+
+      return { ticker: t, name: NAMES[t] ?? t, act, target, upsidePct, reason, liveScore, factorZ };
     });
 
     const conviction = buildConviction(backtest, tickers, buyThreshold, liveScores, valueQualityZ);

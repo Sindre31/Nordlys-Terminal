@@ -2,16 +2,18 @@
 // Uses the free cookie+crumb handshake (no API key). Falls back to {} on error
 // so the UI keeps its designed values.
 
+import { fetchWithTimeout } from '../lib/http.js';
+
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
 async function getCrumb() {
-  const r1 = await fetch('https://fc.yahoo.com', { headers: { 'User-Agent': UA } });
+  const r1 = await fetchWithTimeout('https://fc.yahoo.com', { headers: { 'User-Agent': UA } });
   const setCookies =
     typeof r1.headers.getSetCookie === 'function'
       ? r1.headers.getSetCookie()
       : [r1.headers.get('set-cookie')].filter(Boolean);
   const cookie = setCookies.map((c) => String(c).split(';')[0]).join('; ');
-  const r2 = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+  const r2 = await fetchWithTimeout('https://query1.finance.yahoo.com/v1/test/getcrumb', {
     headers: { 'User-Agent': UA, Cookie: cookie },
   });
   const crumb = (await r2.text()).trim();
@@ -20,7 +22,7 @@ async function getCrumb() {
 
 async function fetchSummary(sym, cookie, crumb) {
   const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,recommendationTrend,calendarEvents,defaultKeyStatistics&crumb=${encodeURIComponent(crumb)}`;
-  const r = await fetch(url, { headers: { 'User-Agent': UA, Cookie: cookie } });
+  const r = await fetchWithTimeout(url, { headers: { 'User-Agent': UA, Cookie: cookie } });
   if (!r.ok) return null;
   const j = await r.json();
   const res = j?.quoteSummary?.result?.[0];

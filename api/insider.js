@@ -1,6 +1,8 @@
 // Primary-insider trades from the official Oslo Børs Newsweb API (no key).
 // Category 1102 = "Managers' transaction" (meldepliktig handel for primærinnsidere).
 
+import { fetchWithTimeout } from '../lib/http.js';
+
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
 function sideFromTitle(t) {
@@ -15,7 +17,7 @@ export default async function handler(req, res) {
   const fromDate = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
   try {
     const url = `https://api3.oslo.oslobors.no/v1/newsreader/list?category=1102&limit=${limit}&fromDate=${fromDate}`;
-    const r = await fetch(url, { headers: { 'User-Agent': UA } });
+    const r = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } });
     const j = await r.json();
     const msgs = j?.data?.messages || [];
     const trades = msgs.map((m) => ({

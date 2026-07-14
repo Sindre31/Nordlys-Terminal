@@ -28,3 +28,30 @@ jobs:
 
       - name: Test
         run: npm run test
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Playwright's bundled browsers aren't on the runner; install just Chromium (matches the
+      # single project in playwright.config.ts) plus its OS deps.
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      # playwright.config.ts starts `vite preview` itself and drives the production bundle,
+      # asserting every tab renders with no crash and no NaN/undefined leaking through.
+      - name: Smoke test (Playwright)
+        run: npm run test:e2e

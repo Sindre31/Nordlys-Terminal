@@ -3,6 +3,8 @@
 // volatility, max drawdown, 1-day VaR(95%), Sharpe and beta vs OSEBX.
 // Input: ?symbols=EQNR.OL:0.15,KOG.OL:0.12,...&rf=4.25
 
+import { fetchWithTimeout } from '../lib/http.js';
+
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 const BENCH = 'OSEBX.OL';
 
@@ -16,7 +18,7 @@ export function dateKey(epochSeconds) {
 
 async function fetchSeries(sym) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1y&interval=1d`;
-  const r = await fetch(url, { headers: { 'User-Agent': UA } });
+  const r = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } });
   if (!r.ok) return null;
   const j = await r.json();
   const res = j?.chart?.result?.[0];

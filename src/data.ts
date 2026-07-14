@@ -163,14 +163,73 @@ export function buildChartPath(
   return { line, area, up: pts[pts.length - 1] >= pts[0] };
 }
 
+// ---- Fetch-health registry ---------------------------------------------------
+// Every live fetch records whether it last succeeded and when, keyed by endpoint (the path
+// before "?"). A small status badge reads this so the UI can tell the user, honestly, whether
+// what they're looking at is live, delayed, or currently unavailable — instead of silently
+// implying every number is fresh. This is the counterpart to showing "—" for missing values:
+// it discloses the health of the pipe, not just the individual cells.
+
+export interface EndpointHealth {
+  ok: boolean; // did the most recent fetch to this endpoint succeed?
+  at: number; // epoch ms of that most recent attempt
+}
+export type HealthMap = Record<string, EndpointHealth>;
+
+const health: HealthMap = {};
+const healthSubs = new Set<() => void>();
+
+function endpointOf(url: string): string {
+  const q = url.indexOf('?');
+  return q >= 0 ? url.slice(0, q) : url;
+}
+
+function recordHealth(url: string, ok: boolean): void {
+  health[endpointOf(url)] = { ok, at: Date.now() };
+  healthSubs.forEach((fn) => fn());
+}
+
+// Subscribe a React component to health changes. Returns the live (mutable) map; the version
+// counter is what actually forces the re-render.
+export function useDataHealth(): HealthMap {
+  const [, setV] = useState(0);
+  useEffect(() => {
+    const fn = () => setV((v) => v + 1);
+    healthSubs.add(fn);
+    return () => {
+      healthSubs.delete(fn);
+    };
+  }, []);
+  return health;
+}
+
+// Overall pipeline status derived from the health map. "offline" if every recent attempt failed,
+// "delayed" if some failed or the freshest success is stale, else "live".
+export type PipelineStatus = 'live' | 'delayed' | 'offline' | 'connecting';
+export function pipelineStatus(h: HealthMap, staleMs = 180000): { status: PipelineStatus; newest: number | null } {
+  const entries = Object.values(h);
+  if (entries.length === 0) return { status: 'connecting', newest: null };
+  const okEntries = entries.filter((e) => e.ok);
+  const newest = okEntries.length ? Math.max(...okEntries.map((e) => e.at)) : null;
+  if (okEntries.length === 0) return { status: 'offline', newest: null };
+  const anyFailed = entries.some((e) => !e.ok);
+  const stale = newest != null && Date.now() - newest > staleMs;
+  return { status: anyFailed || stale ? 'delayed' : 'live', newest };
+}
+
 // ---- Fetch helpers -----------------------------------------------------------
 
 async function getJSON(url: string): Promise<unknown | null> {
   try {
     const r = await fetch(url);
-    if (!r.ok) return null;
+    if (!r.ok) {
+      recordHealth(url, false);
+      return null;
+    }
+    recordHealth(url, true);
     return await r.json();
   } catch {
+    recordHealth(url, false);
     return null;
   }
 }

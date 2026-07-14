@@ -15,6 +15,8 @@ import {
   useFundamentals,
   useRiskStats,
   useBacktest,
+  useDataHealth,
+  pipelineStatus,
   fmtDayMon,
   computePortfolio,
   buildChartPath,
@@ -27,10 +29,11 @@ import {
   type Quote,
   type QuoteMap,
 } from './data';
-import { useQuantModel, RISK_OPTIONS } from './quant/useQuantModel';
+import { useQuantModel, RISK_OPTIONS, type FactorZ } from './quant/useQuantModel';
 import {
   LEDGER_VERSION,
   isValidLedger,
+  rebaseBenchmark,
   type PortfolioLedger,
   type LedgerHolding,
   type LedgerTransaction,
@@ -249,10 +252,16 @@ function spark(up: boolean) {
 
 function chgEl(chg: number, size?: number) {
   const up = chg >= 0;
+  // A directional arrow + explicit sign so the up/down meaning survives without colour — for
+  // colour-blind users and for grayscale screenshots where red/green are indistinguishable.
   return React.createElement(
     'span',
-    { className: 'mono', style: { color: up ? '#3DBB84' : '#E4655E', fontSize: size || 12 } },
-    (up ? '+' : '') + chg.toFixed(2) + '%',
+    {
+      className: 'mono',
+      'aria-label': `${up ? 'up' : 'down'} ${Math.abs(chg).toFixed(2)} percent`,
+      style: { color: up ? '#3DBB84' : '#E4655E', fontSize: size || 12 },
+    },
+    `${up ? '▲' : '▼'} ${(up ? '+' : '') + chg.toFixed(2)}%`,
   );
 }
 
@@ -355,12 +364,24 @@ function scImpact(v: number) {
 type Tab = 'markets' | 'watchlist' | 'news' | 'reports' | 'alerts' | 'ai' | 'risk' | 'fx' | 'attr' | 'ins' | 'bt';
 type RiskLevel = 'conservative' | 'balanced' | 'aggressive';
 
+const TABS: Tab[] = ['markets', 'watchlist', 'news', 'reports', 'alerts', 'ai', 'risk', 'fx', 'attr', 'ins', 'bt'];
+const RISK_LEVELS: RiskLevel[] = ['conservative', 'balanced', 'aggressive'];
+
 export default function Terminal() {
-  const [tab, setTab] = useState<Tab>('markets');
+  // Restore the last-viewed tab and risk level so a refresh doesn't dump the user back to Markets /
+  // the default profile. Validated against the known sets so a stale or hand-edited value can't
+  // land the app on a tab that no longer exists.
+  const [tab, setTab] = useState<Tab>(() => {
+    const saved = loadLS<string>('nordlys_tab', 'markets');
+    return (TABS as string[]).includes(saved) ? (saved as Tab) : 'markets';
+  });
   const [stock, setStock] = useState<string | null>(null);
   const [showConv, setShowConv] = useState(false);
   const [rbEvent, setRbEvent] = useState<number | null>(null);
-  const [risk, setRisk] = useState<RiskLevel>('balanced');
+  const [risk, setRisk] = useState<RiskLevel>(() => {
+    const saved = loadLS<string>('nordlys_risk', 'balanced');
+    return (RISK_LEVELS as string[]).includes(saved) ? (saved as RiskLevel) : 'balanced';
+  });
   const [watchTickers, setWatchTickers] = useState<string[]>(() => loadValidArray('nordlys_watchlist', (v): v is string => typeof v === 'string'));
   const [editWatch, setEditWatch] = useState(false);
   const [alertRules, setAlertRules] = useState<AlertRule[]>(() => loadValidArray('nordlys_alert_rules', isAlertRule));
@@ -369,6 +390,12 @@ export default function Terminal() {
   const [newAlertCond, setNewAlertCond] = useState<'above' | 'below' | 'pct'>('above');
   const [newAlertPrice, setNewAlertPrice] = useState('');
 
+  useEffect(() => {
+    localStorage.setItem('nordlys_tab', JSON.stringify(tab));
+  }, [tab]);
+  useEffect(() => {
+    localStorage.setItem('nordlys_risk', JSON.stringify(risk));
+  }, [risk]);
   useEffect(() => {
     localStorage.setItem('nordlys_watchlist', JSON.stringify(watchTickers));
   }, [watchTickers]);
@@ -400,6 +427,7 @@ export default function Terminal() {
 
   // ---- Live data (falls back to the designed values until it loads) ----
   const live: QuoteMap = useQuotes(ALL_SYMBOLS);
+  const dataHealth = useDataHealth();
   const clock = useOsloClock();
   const macro = useMacro();
   // Oslo-listed symbols for consensus/dividends/earnings (funds & US names excluded where no data).
@@ -889,6 +917,26 @@ export default function Terminal() {
 
   const isOsloListed = (t: string) => STOCK_YAHOO[t]?.endsWith('.OL') ?? false;
   const EXCHANGE_OF: Record<string, string> = { NVDA: 'NASDAQ', LMT: 'NYSE', XOM: 'NYSE' };
+  // Renders the model's per-name factor z-scores as small labelled chips, so a holding's
+  // selection is auditable at a glance rather than being a black box. "—" where a factor
+  // couldn't be computed (e.g. no P/B from Yahoo). Higher = more favourable for every factor.
+  const zColor = (v: number | null) => (v == null ? '#5B626C' : v > 0.15 ? '#3DBB84' : v < -0.15 ? '#E4655E' : '#8A929E');
+  const zStr = (v: number | null) => (v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1));
+  const factorChips = (fz: FactorZ) => {
+    const items: { k: string; v: number | null }[] = [
+      { k: 'Mom', v: fz.momentum }, { k: 'Trend', v: fz.trend }, { k: 'Low-vol', v: fz.lowVol }, { k: 'Val/Qual', v: fz.valueQuality },
+    ];
+    return (
+      <div style={css("display:flex; flex-wrap:wrap; gap:5px; margin-top:5px;")}>
+        {items.map((it) => (
+          <span key={it.k} className="mono" style={css(`display:inline-flex; gap:4px; align-items:center; font-size:9.5px; padding:1.5px 6px; border-radius:4px; background:#14181D; border:1px solid #23272E; color:#7C8492;`)}>
+            {it.k}<span style={css(`color:${zColor(it.v)}; font-weight:600;`)}>{zStr(it.v)}</span>
+          </span>
+        ))}
+      </div>
+    );
+  };
+  const EMPTY_FZ = { momentum: null, trend: null, lowVol: null, valueQuality: null };
   const aiHoldings = POSITIONS.map((p) => {
     const sig = quantModel.signals.find((s) => s.ticker === p.ticker);
     return {
@@ -896,6 +944,7 @@ export default function Terminal() {
       name: base[p.ticker]?.name || p.ticker,
       type: `Share · ${EXCHANGE_OF[p.ticker] || 'Oslo Børs'} · ${p.theme}`,
       driver: sig?.reason || 'Selected by the momentum/trend/low-volatility factor model.',
+      factorZ: sig?.factorZ ?? EMPTY_FZ,
       conv: 'Medium',
       ask: isOsloListed(p.ticker),
     };
@@ -1030,17 +1079,6 @@ export default function Terminal() {
   const th = thesis()[stock as string];
   const sDrivers = th ? th.drivers.map((d) => ({ ...d, sentEl: sentBadge(d.sent) })) : [];
 
-  const insiderTrades = [
-    { date: '09 Jul', ticker: 'EQNR', company: 'Equinor', person: 'Torgrim Reitan', role: 'CFO', side: 'BUY', shares: '15 000', value: 'NOK 4.68m', holding: '84 200' },
-    { date: '08 Jul', ticker: 'KOG', company: 'Kongsberg Gr.', person: 'Geir Håøy', role: 'CEO', side: 'BUY', shares: '5 000', value: 'NOK 5.42m', holding: '41 500' },
-    { date: '08 Jul', ticker: 'DNB', company: 'DNB Bank', person: 'Kjerstin Braathen', role: 'CEO', side: 'BUY', shares: '8 000', value: 'NOK 1.78m', holding: '62 300' },
-    { date: '05 Jul', ticker: 'MOWI', company: 'Mowi', person: 'Board member', role: 'Primary insider', side: 'SELL', shares: '40 000', value: 'NOK 7.84m', holding: '0' },
-    { date: '04 Jul', ticker: 'NHY', company: 'Norsk Hydro', person: 'Pål Kildemo', role: 'CFO', side: 'BUY', shares: '60 000', value: 'NOK 4.13m', holding: '210 000' },
-    { date: '03 Jul', ticker: 'TEL', company: 'Telenor', person: 'Primary insider', role: 'EVP', side: 'SELL', shares: '12 000', value: 'NOK 1.66m', holding: '5 000' },
-    { date: '02 Jul', ticker: 'AKRBP', company: 'Aker BP', person: 'Karl Johnny Hersvik', role: 'CEO', side: 'BUY', shares: '10 000', value: 'NOK 2.55m', holding: '120 000' },
-    { date: '01 Jul', ticker: 'SALM', company: 'SalMar', person: 'Chair', role: 'Board chair', side: 'BUY', shares: '3 000', value: 'NOK 1.84m', holding: '22 000' },
-  ].map((t) => ({ ...t, sideEl: side(t.side), open: S[t.ticker] ? open(t.ticker) : undefined }));
-
   // Conviction display values come from the real engine above; the stance
   // supplies the cash target, label and narrative note.
   const rc = {
@@ -1154,11 +1192,9 @@ export default function Terminal() {
     const hist = ledger?.navHistory ?? [];
     if (hist.length < 2) return null;
     const navVals = hist.map((n) => n.totalValue);
-    // Rebase the benchmark to the portfolio's starting NAV using the first snapshot that has one.
-    const baseBenchIdx = hist.findIndex((n) => n.bench != null);
-    const benchRebased: (number | null)[] = hist.map((n) =>
-      baseBenchIdx >= 0 && n.bench != null ? navVals[0] * (n.bench / hist[baseBenchIdx].bench!) : null,
-    );
+    // Benchmark rebasing + relative-return math live in ledger.ts as a pure, unit-tested function
+    // (rebaseBenchmark); this block only turns the numbers into SVG geometry.
+    const { benchRebased, relPct } = rebaseBenchmark(hist);
     const benchPts = benchRebased.filter((v): v is number => v != null);
     const min = Math.min(...navVals, ...benchPts);
     const max = Math.max(...navVals, ...benchPts);
@@ -1176,15 +1212,7 @@ export default function Terminal() {
       .map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
     const up = navVals[navVals.length - 1] >= navVals[0];
     const benchVal = benchPts.length >= 2 ? benchLine : null;
-    // Portfolio vs benchmark return since inception (only when both are available).
-    const relStr = (() => {
-      if (baseBenchIdx < 0 || benchPts.length < 2) return null;
-      const navRet = navVals[navVals.length - 1] / navVals[0] - 1;
-      const lastBench = [...benchRebased].reverse().find((v) => v != null)!;
-      const benchRet = lastBench / navVals[0] - 1;
-      const diff = (navRet - benchRet) * 100;
-      return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}% vs OSEBX`;
-    })();
+    const relStr = relPct == null ? null : `${relPct >= 0 ? '+' : ''}${relPct.toFixed(1)}% vs OSEBX`;
     return { navLine, navArea, benchLine: benchVal, up, relStr };
   })();
 
@@ -1249,22 +1277,11 @@ export default function Terminal() {
       }))
     : newsList.map((n) => ({ ...n, link: '', image: '' }));
 
-  const sdNews = stockNews.length
-    ? stockNews.slice(0, 4).map((n) => ({ title: n.title, meta: `${n.source || 'News'} · ${fmtTime(n.time)}`, link: n.link }))
-    : [
-        { title: 'Equinor lifts quarterly dividend, unveils $1.2bn buyback', meta: 'Reuters · 14:21', link: '' },
-        { title: 'DNB Markets raises Equinor target to 340 NOK', meta: 'E24 · 11:05', link: '' },
-        { title: 'Johan Castberg field starts production ahead of schedule', meta: 'Bloomberg · Yesterday', link: '' },
-      ];
+  // Real headlines only — no fabricated fallback list. Empty until the live newswire responds,
+  // and the render shows an honest "awaiting feed" state rather than invented stories.
+  const sdNews = stockNews.slice(0, 4).map((n) => ({ title: n.title, meta: `${n.source || 'News'} · ${fmtTime(n.time)}`, link: n.link }));
 
-  const mostRead = marketNews.length > 8
-    ? marketNews.slice(8, 12).map((n) => ({ title: n.title, link: n.link }))
-    : [
-        { title: 'Kongsberg wins NOK 4.3bn defence contract from NATO partner', link: '' },
-        { title: 'Aker BP raises 2026 production guidance after Yggdrasil ramp-up', link: '' },
-        { title: 'Norges Bank holds policy rate at 4.25%, signals cut in autumn', link: '' },
-        { title: 'Salmon exporters warn of margin squeeze into Q3', link: '' },
-      ];
+  const mostRead = marketNews.length > 8 ? marketNews.slice(8, 12).map((n) => ({ title: n.title, link: n.link })) : [];
 
   const pctColor = (v: number) => (v >= 0 ? '#3DBB84' : '#E4655E');
   const pctText = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
@@ -1614,6 +1631,28 @@ export default function Terminal() {
     <div className="hide-sm" style={css("display:flex; align-items:center; gap:8px; background:#191D24; border:1px solid #23272E; border-radius:7px; padding:6px 11px; width:220px; color:#5B626C; font-size:12.5px;")}>
       <span className="mono">⌕</span> Search symbol…
     </div>
+    {(() => {
+      const { status, newest } = pipelineStatus(dataHealth);
+      const meta: Record<string, { color: string; label: string }> = {
+        live: { color: '#0E8A5F', label: 'LIVE DATA' },
+        delayed: { color: '#C79A3D', label: 'DATA DELAYED' },
+        offline: { color: '#E4655E', label: 'DATA OFFLINE' },
+        connecting: { color: '#5B626C', label: 'CONNECTING…' },
+      };
+      const m = meta[status];
+      const upd = newest ? new Date(newest).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+      const title =
+        status === 'live' ? `All live data sources responding · last update ${upd}`
+        : status === 'delayed' ? `Some sources are slow or failing · freshest update ${upd || '—'}`
+        : status === 'offline' ? 'Live data sources are unreachable right now — figures shown as “—”'
+        : 'Connecting to live data sources…';
+      return (
+        <div className="mono hide-sm" title={title} aria-label={title} style={css(`display:flex; align-items:center; gap:6px; font-size:11.5px; color:#8A929E;`)}>
+          <span style={css(`width:7px; height:7px; border-radius:50%; background:${m.color}; box-shadow:0 0 0 3px ${m.color}2E;`)}></span>
+          {m.label}{status === 'live' && upd ? ` · ${upd}` : ''}
+        </div>
+      );
+    })()}
     <div className="mono hide-sm" style={css("display:flex; align-items:center; gap:6px; font-size:11.5px; color:#8A929E;")}>
       <span style={css(`width:7px; height:7px; border-radius:50%; background:${clock.open ? '#0E8A5F' : '#5B626C'}; box-shadow:0 0 0 3px rgba(14,138,95,0.18);`)}></span>
       {clock.open ? 'OSLO OPEN' : 'OSLO CLOSED'} · {clock.time}
@@ -1845,9 +1884,11 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Most read</span>
             <div style={css("margin-top:12px; display:flex; flex-direction:column; gap:14px;")}>
-              {mostRead.map((m, i) => (
+              {mostRead.length ? mostRead.map((m, i) => (
                 <a key={i} href={m.link || undefined} target="_blank" rel="noreferrer" style={css("display:flex; gap:12px; text-decoration:none;")}><span className="mono" style={css("font-size:16px; color:#3A414B; font-weight:600;")}>{String(i + 1).padStart(2, '0')}</span><span style={css("font-size:13px; line-height:1.4; color:#DDE1E7;")}>{m.title}</span></a>
-              ))}
+              )) : (
+                <span className="mono" style={css("font-size:11.5px; color:#5B626C; line-height:1.5;")}>Awaiting the live newswire (E24 · Oslo Børs)…</span>
+              )}
             </div>
           </div>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
@@ -2186,7 +2227,10 @@ export default function Terminal() {
           
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             <div className="mono" style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; padding:10px 18px; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
-              <span>Holding</span><span style={css("text-align:right;")}>Alloc</span><span style={css("text-align:right;")}>Value</span><span style={css("text-align:right;")}>Today</span><span style={css("text-align:center;")}>Conviction</span><span>AI driver</span>
+              <span>Holding</span><span style={css("text-align:right;")}>Alloc</span><span style={css("text-align:right;")}>Value</span><span style={css("text-align:right;")}>Today</span><span style={css("text-align:center;")}>Conviction</span><span>AI driver · factor z-scores</span>
+            </div>
+            <div style={css("display:flex; align-items:center; gap:8px; padding:7px 18px; border-bottom:1px solid #191D23; background:#0C0E11;")}>
+              <span style={css("font-size:11px; color:#6B727C; line-height:1.4;")}>Each holding shows the cross-sectional factor z-scores behind its selection — <span className="mono" style={css("color:#8A929E;")}>Mom</span> (6-month momentum), <span className="mono" style={css("color:#8A929E;")}>Trend</span> (13/52-week), <span className="mono" style={css("color:#8A929E;")}>Low-vol</span> (inverted realized vol) and <span className="mono" style={css("color:#8A929E;")}>Val/Qual</span> (P/B inverted + ROE, today's snapshot). Higher is more favourable; “—” means the factor wasn't computable.</span>
             </div>
             <div style={css("display:flex; align-items:center; gap:8px; padding:8px 18px; border-bottom:1px solid #191D23; background:#0C0E11;")}>
               <span style={css("font-size:10.5px; color:#C79A3D; border:1px solid #4A3E1E; background:#211B0E; border-radius:20px; padding:2px 8px; letter-spacing:0.03em;")}>◔ Outside ASK</span>
@@ -2199,7 +2243,7 @@ export default function Terminal() {
                 <span className="mono" style={css("text-align:right; font-size:12.5px; color:#9AA1AC;")}>{h.value}</span>
                 <span style={css("text-align:right;")}>{h.chgEl}</span>
                 <span style={css("text-align:center;")}>{h.convEl}</span>
-                <span style={css("font-size:11.5px; color:#9AA1AC;")}>{h.driver}</span>
+                <div style={css("min-width:0;")}><span style={css("font-size:11.5px; color:#9AA1AC;")}>{h.driver}</span>{factorChips(h.factorZ)}</div>
               </div>
             </React.Fragment>))}
           </div>
@@ -2587,22 +2631,10 @@ export default function Terminal() {
             </React.Fragment>))}
           </>
         ) : (
-          <>
-            <div className="mono" style={css("display:grid; grid-template-columns:70px 1.7fr 1.9fr 66px 0.9fr 1fr 1fr; gap:12px; padding:10px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
-              <span>Date</span><span>Company</span><span>Insider</span><span style={css("text-align:center;")}>Side</span><span style={css("text-align:right;")}>Shares</span><span style={css("text-align:right;")}>Value</span><span style={css("text-align:right;")}>Post-trade</span>
-            </div>
-            {insiderTrades.map((t, i) => (<React.Fragment key={i}>
-              <div onClick={t.open} style={css("display:grid; grid-template-columns:70px 1.7fr 1.9fr 66px 0.9fr 1fr 1fr; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
-                <span className="mono" style={css("font-size:12px; color:#9AA1AC;")}>{t.date}</span>
-                <div style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{t.ticker}</span> <span style={css("font-size:11.5px; color:#7C8492;")}>{t.company}</span></div>
-                <div style={css("min-width:0;")}><div style={css("font-size:12.5px; color:#DDE1E7;")}>{t.person}</div><div style={css("font-size:10.5px; color:#5B626C;")}>{t.role}</div></div>
-                <span style={css("text-align:center;")}>{t.sideEl}</span>
-                <span className="mono" style={css("text-align:right; font-size:12px; color:#EDEFF2;")}>{t.shares}</span>
-                <span className="mono" style={css("text-align:right; font-size:12px; color:#9AA1AC;")}>{t.value}</span>
-                <span className="mono" style={css("text-align:right; font-size:12px; color:#9AA1AC;")}>{t.holding}</span>
-              </div>
-            </React.Fragment>))}
-          </>
+          <div style={css("padding:40px 18px; text-align:center;")}>
+            <div className="mono" style={css("font-size:12px; color:#8A929E;")}>Awaiting the Oslo Børs Newsweb feed…</div>
+            <div style={css("font-size:11.5px; color:#5B626C; margin-top:6px; line-height:1.5;")}>Primary-insider disclosures (Newsweb category 1102) load here as they publish. No trades are shown until the live feed responds — nothing on this screen is placeholder data.</div>
+          </div>
         )}
       </div>
     </div>
@@ -2824,9 +2856,11 @@ export default function Terminal() {
     <div style={css("padding:18px 26px;")}>
       <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Latest news</span>
       <div style={css("margin-top:12px; display:flex; flex-direction:column; gap:2px;")}>
-        {sdNews.map((n, i) => (
+        {sdNews.length ? sdNews.map((n, i) => (
           <a key={i} href={n.link || undefined} target="_blank" rel="noreferrer" style={css(`display:block; padding:12px 0; ${i < sdNews.length - 1 ? 'border-bottom:1px solid #191D23;' : ''} text-decoration:none;`)}><div style={css("font-size:13.5px; color:#DDE1E7; line-height:1.4; font-weight:500;")}>{n.title}</div><div className="mono" style={css("font-size:11px; color:#5B626C; margin-top:5px;")}>{n.meta}</div></a>
-        ))}
+        )) : (
+          <span className="mono" style={css("font-size:11.5px; color:#5B626C; padding:8px 0; line-height:1.5;")}>No recent headlines for this name in the live feed yet.</span>
+        )}
       </div>
     </div>
   </div>

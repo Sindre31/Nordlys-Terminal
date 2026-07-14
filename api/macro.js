@@ -1,5 +1,7 @@
 // Official Norwegian macro data — Norges Bank open data API (no key required).
 
+import { fetchWithTimeout } from '../lib/http.js';
+
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
 const CPI_QUERY = {
@@ -12,7 +14,7 @@ const CPI_QUERY = {
 };
 
 async function nbValue(seriesUrl) {
-  const r = await fetch(seriesUrl, { headers: { 'User-Agent': UA } });
+  const r = await fetchWithTimeout(seriesUrl, { headers: { 'User-Agent': UA } });
   const txt = await r.text();
   const lines = txt.trim().split('\n');
   const header = lines[0].split(';');
@@ -38,7 +40,7 @@ export default async function handler(req, res) {
   }
   // SSB consumer price index, 12-month change (official).
   try {
-    const r = await fetch('https://data.ssb.no/api/v0/en/table/03013', {
+    const r = await fetchWithTimeout('https://data.ssb.no/api/v0/en/table/03013', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
       body: JSON.stringify(CPI_QUERY),
