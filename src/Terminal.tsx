@@ -27,6 +27,7 @@ import {
   type Quote,
   type QuoteMap,
 } from './data';
+import { useQuantModel } from './quant/useQuantModel';
 
 function css(str: string): React.CSSProperties {
   const obj: Record<string, string> = {};
@@ -437,6 +438,7 @@ export default function Terminal() {
     .filter(Boolean) as string[];
   const riskStats = useRiskStats(riskPairs, macro.policyRate ?? 4.25);
   const backtest = useBacktest(riskPairs, macro.policyRate ?? 4.25);
+  const quantModel = useQuantModel();
 
   // ---- Real conviction engine ------------------------------------------------
   // Per-holding conviction is computed from live analyst consensus (target upside
@@ -1179,6 +1181,16 @@ export default function Terminal() {
   const sUpsideEl = upside(th ? th.upside : 0);
   const sRecoEl = actBadge(th ? th.reco : 'HOLD');
   const sRisks = th ? th.risks : [];
+
+  const qmReady = quantModel.ready && !!quantModel.backtest;
+  const qmMetrics = quantModel.backtest?.metrics;
+  const pctStr = (v: number, dec = 1) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(dec)}%`;
+  const qmSignals = quantModel.signals.map((s) => ({
+    ...s,
+    actEl: actBadge(s.act),
+    upsideEl: upside(s.upsidePct),
+    targetStr: s.target != null ? fmtPrice(s.target) : '—',
+  }));
 
   return (
 
@@ -2193,6 +2205,34 @@ export default function Terminal() {
         </React.Fragment>))}
       </div>
       <div style={css("font-size:11px; color:#5B626C; line-height:1.5; margin-top:12px;")}>Backtest applies the portfolio's current target weights to real monthly closing prices (Yahoo Finance), rebalanced monthly with a modelled 0.05% per-trade cost, benchmarked against OSEBX. It assumes today's weights were held throughout and does not represent actual historical trades; past performance is not indicative of future results.</div>
+
+
+      <div style={css("border:1px solid #3B2F63; border-radius:12px; background:#120E22; padding:16px 18px; margin-top:20px;")}>
+        <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:4px;")}>
+          <span style={css("font-size:14px; font-weight:600; color:#F2F4F7;")}>Systematic factor model</span>
+          <span style={css("font-size:11px; color:#8A929E;")}>6-month momentum + 13/52-week trend + low-volatility, top 5 of 12 names, weekly data</span>
+          <div style={css("flex:1;")}></div>
+          <span className="mono" style={css("font-size:10.5px; color:#5B626C; border:1px solid #2A2F37; border-radius:20px; padding:3px 10px;")}>{qmReady ? 'Real weekly prices' : 'Loading…'}</span>
+        </div>
+        <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:12px;")}>
+          <div style={css("border:1px solid #2A2440; border-radius:10px; background:#161029; padding:11px 13px;")}><div style={css("font-size:10.5px; color:#8A78B8;")}>CAGR</div><div className="mono" style={css("font-size:17px; font-weight:600; color:#3DBB84; margin-top:3px;")}>{qmMetrics ? pctStr(qmMetrics.stratCagr) : '—'}</div></div>
+          <div style={css("border:1px solid #2A2440; border-radius:10px; background:#161029; padding:11px 13px;")}><div style={css("font-size:10.5px; color:#8A78B8;")}>Alpha vs OSEBX</div><div className="mono" style={css("font-size:17px; font-weight:600; color:#B79BFF; margin-top:3px;")}>{qmMetrics ? pctStr(qmMetrics.alpha) : '—'}</div></div>
+          <div style={css("border:1px solid #2A2440; border-radius:10px; background:#161029; padding:11px 13px;")}><div style={css("font-size:10.5px; color:#8A78B8;")}>Sharpe</div><div className="mono" style={css("font-size:17px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{qmMetrics ? qmMetrics.sharpe.toFixed(2) : '—'}</div></div>
+          <div style={css("border:1px solid #2A2440; border-radius:10px; background:#161029; padding:11px 13px;")}><div style={css("font-size:10.5px; color:#8A78B8;")}>Max drawdown</div><div className="mono" style={css("font-size:17px; font-weight:600; color:#E4655E; margin-top:3px;")}>{qmMetrics ? pctStr(qmMetrics.maxDrawdown) : '—'}</div></div>
+        </div>
+        <div className="mono" style={css("display:grid; grid-template-columns:70px 1.6fr 1fr 2.4fr; gap:10px; padding:9px 2px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#7A6FA0; border-bottom:1px solid #221B38; margin-top:14px;")}>
+          <span>Signal</span><span>Instrument</span><span style={css("text-align:right;")}>Upside</span><span>Momentum / trend / vol</span>
+        </div>
+        {qmSignals.map((s, i) => (<React.Fragment key={i}>
+          <div style={css("display:grid; grid-template-columns:70px 1.6fr 1fr 2.4fr; gap:10px; align-items:center; padding:10px 2px; border-bottom:1px solid #1E1834;")}>
+            <span>{s.actEl}</span>
+            <div style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{s.ticker}</span> <span style={css("font-size:11.5px; color:#8A78B8;")}>{s.name}</span></div>
+            <span style={css("text-align:right;")}>{s.upsideEl}</span>
+            <span style={css("font-size:11px; color:#9C90C0; line-height:1.4;")}>{s.reason}</span>
+          </div>
+        </React.Fragment>))}
+        <div style={css("font-size:11px; color:#6F6590; line-height:1.5; margin-top:12px;")}>Complementary to the backtest above: instead of the portfolio's fixed current weights, this systematically re-picks the top 5 of the 12 tracked names every 4 weeks by composite score, with a modelled 0.05% turnover cost. Small universe, ~4–5 years of history, no out-of-sample validation — illustrative of a systematic approach, not a verified edge, and not investment advice.</div>
+      </div>
     </div>
     </>)}
 
