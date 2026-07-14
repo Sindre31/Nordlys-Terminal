@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { STOCK_YAHOO } from '../data';
 import { alignSeries, type RawSeries } from './align';
 import { runBacktest, type BacktestResult, type BacktestOptions } from './backtest';
@@ -110,20 +110,25 @@ function buildConviction(backtest: BacktestResult, tickers: string[], buyThresho
   };
 }
 
-// Systematic momentum + trend + low-volatility factor model, complementary to the
-// portfolio's current-weights backtest above: this one dynamically picks among the
-// 12 tracked names each month rather than holding fixed weights. See backtest.ts for
-// the methodology and its caveats (small universe, short history, no OOS validation).
-// The risk-level toggle changes how many names it holds and how strict the quality bar
-// is (conservative = pickier + more cash-like, aggressive = looser + more diversified),
-// matching the existing risk-level cash%/tilt copy elsewhere in the app.
-export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
-  const [state, setState] = useState<QuantModel>({ ready: false, error: null, backtest: null, signals: [], conviction: null });
+interface RawData {
+  weekKeys: string[];
+  series: Record<string, number[]>;
+  summary: Record<string, SummaryInfo>;
+}
+
+interface FetchState {
+  raw: RawData | null;
+  error: string | null;
+}
+
+// Fetches the price history + analyst consensus once (and on a slow interval), independent of
+// the risk-level toggle — that data doesn't change when you switch risk profiles, only which
+// strategy parameters get applied to it.
+function useRawMarketData(): FetchState {
+  const [state, setState] = useState<FetchState>({ raw: null, error: null });
 
   useEffect(() => {
     let cancelled = false;
-    const opts = RISK_OPTIONS[riskLevel];
-    const buyThreshold = opts.scoreThreshold ?? 0;
 
     async function load() {
       const tickers = Object.keys(STOCK_YAHOO);
@@ -141,36 +146,14 @@ export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
         if (weekKeys.length === 0 || Object.values(series).every((s) => s.every((v) => v == null))) {
           throw new Error('No price history returned — Yahoo Finance may be unreachable right now');
         }
-        const backtest = runBacktest(weekKeys, series, tickers, BENCHMARK_SYMBOL, opts);
 
         const yahooSymbols = tickers.map((t) => STOCK_YAHOO[t]).join(',');
         const summaryResp = (await getJSON(`/api/summary?symbols=${encodeURIComponent(yahooSymbols)}`)) as
           | { summary?: Record<string, SummaryInfo> }
           | null;
         if (cancelled) return;
-        const summary = summaryResp?.summary ?? {};
 
-        const signals: QuantSignalRow[] = tickers.map((t) => {
-          const snap = backtest.latestScores[t];
-          const composite = snap?.composite ?? null;
-          const act: QuantSignalRow['act'] =
-            composite == null ? 'HOLD' : composite > buyThreshold ? 'BUY' : composite < -buyThreshold ? 'SELL' : 'HOLD';
-
-          const target = summary[STOCK_YAHOO[t]]?.targetMean ?? null;
-          const lastClose = series[t][series[t].length - 1];
-          const upsidePct = target != null && lastClose ? ((target - lastClose) / lastClose) * 100 : 0;
-
-          const parts: string[] = [];
-          if (snap?.momentum != null) parts.push(`${snap.momentum >= 0 ? '+' : ''}${(snap.momentum * 100).toFixed(1)}% 6m momentum`);
-          if (snap?.trend != null) parts.push(`${snap.trend >= 0 ? 'above' : 'below'} 13/52-week trend`);
-          if (snap?.vol != null) parts.push(`${(snap.vol * 100).toFixed(0)}% realized vol`);
-          const reason = parts.length > 0 ? parts.join(' · ') : 'Insufficient price history for a signal';
-
-          return { ticker: t, name: NAMES[t] ?? t, act, target, upsidePct, reason };
-        });
-
-        const conviction = buildConviction(backtest, tickers, buyThreshold);
-        setState({ ready: true, error: null, backtest, signals, conviction });
+        setState({ raw: { weekKeys, series, summary: summaryResp?.summary ?? {} }, error: null });
       } catch (err) {
         if (!cancelled) {
           setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : 'Failed to load the factor model' }));
@@ -184,7 +167,51 @@ export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
       cancelled = true;
       clearInterval(id);
     };
-  }, [riskLevel]);
+  }, []);
 
   return state;
+}
+
+// Systematic momentum + trend + low-volatility factor model, complementary to the
+// portfolio's current-weights backtest above: this one dynamically picks among the
+// 12 tracked names each month rather than holding fixed weights. See backtest.ts for
+// the methodology and its caveats (small universe, short history, no OOS validation).
+// The risk-level toggle changes how many names it holds and how strict the quality bar
+// is (conservative = pickier + more cash-like, aggressive = looser + more diversified),
+// matching the existing risk-level cash%/tilt copy elsewhere in the app. Switching risk
+// level only recomputes the backtest against already-fetched data — it never re-fetches.
+export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
+  const { raw, error } = useRawMarketData();
+
+  return useMemo<QuantModel>(() => {
+    if (!raw) return { ready: false, error, backtest: null, signals: [], conviction: null };
+
+    const tickers = Object.keys(STOCK_YAHOO);
+    const opts = RISK_OPTIONS[riskLevel];
+    const buyThreshold = opts.scoreThreshold ?? 0;
+    const { weekKeys, series, summary } = raw;
+    const backtest = runBacktest(weekKeys, series, tickers, BENCHMARK_SYMBOL, opts);
+
+    const signals: QuantSignalRow[] = tickers.map((t) => {
+      const snap = backtest.latestScores[t];
+      const composite = snap?.composite ?? null;
+      const act: QuantSignalRow['act'] =
+        composite == null ? 'HOLD' : composite > buyThreshold ? 'BUY' : composite < -buyThreshold ? 'SELL' : 'HOLD';
+
+      const target = summary[STOCK_YAHOO[t]]?.targetMean ?? null;
+      const lastClose = series[t][series[t].length - 1];
+      const upsidePct = target != null && lastClose ? ((target - lastClose) / lastClose) * 100 : 0;
+
+      const parts: string[] = [];
+      if (snap?.momentum != null) parts.push(`${snap.momentum >= 0 ? '+' : ''}${(snap.momentum * 100).toFixed(1)}% 6m momentum`);
+      if (snap?.trend != null) parts.push(`${snap.trend >= 0 ? 'above' : 'below'} 13/52-week trend`);
+      if (snap?.vol != null) parts.push(`${(snap.vol * 100).toFixed(0)}% realized vol`);
+      const reason = parts.length > 0 ? parts.join(' · ') : 'Insufficient price history for a signal';
+
+      return { ticker: t, name: NAMES[t] ?? t, act, target, upsidePct, reason };
+    });
+
+    const conviction = buildConviction(backtest, tickers, buyThreshold);
+    return { ready: true, error: null, backtest, signals, conviction };
+  }, [raw, error, riskLevel]);
 }
