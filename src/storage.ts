@@ -26,6 +26,18 @@ export function loadLS<T>(key: string, fallback: T): T {
   }
 }
 
+// Persists a value as JSON, swallowing any failure. localStorage.setItem throws in Safari private
+// mode and on quota-exceeded; without this guard a write in a render effect would surface as an
+// uncaught error and (via the error boundary) blank the app. Losing a persisted preference is an
+// acceptable degradation; crashing is not.
+export function saveLS(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private mode / quota exceeded — skip persistence rather than crash */
+  }
+}
+
 // Loads a persisted array, keeping only items that pass a per-item shape check. Guards the
 // watchlist/alerts localStorage against corrupt or schema-drifted data (same class of fragility
 // the portfolio ledger is versioned against) — a bad entry is dropped rather than crashing a

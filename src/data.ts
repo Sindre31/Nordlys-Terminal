@@ -234,6 +234,22 @@ async function getJSON(url: string): Promise<unknown | null> {
   }
 }
 
+// Runs `load` immediately, then on an interval — but skips ticks while the tab is hidden, and
+// fires an immediate refresh when it becomes visible again. Background tabs shouldn't keep hitting
+// the API (and Yahoo's rate limits) on a timer no one is watching. Returns an effect cleanup that
+// stops the interval and detaches the listener; callers keep their own `alive` guard for setState.
+export function startPolling(load: () => void, intervalMs: number): () => void {
+  load();
+  const tick = () => { if (!document.hidden) load(); };
+  const id = setInterval(tick, intervalMs);
+  const onVisible = () => { if (!document.hidden) load(); };
+  document.addEventListener('visibilitychange', onVisible);
+  return () => {
+    clearInterval(id);
+    document.removeEventListener('visibilitychange', onVisible);
+  };
+}
+
 // ---- Hooks -------------------------------------------------------------------
 
 // Batched live quotes, refreshed on an interval. Empty until the first
@@ -249,11 +265,10 @@ export function useQuotes(symbols: string[], intervalMs = 30000): QuoteMap {
         | null;
       if (alive && j && j.quotes) setQuotes(j.quotes);
     };
-    load();
-    const id = setInterval(load, intervalMs);
+    const stop = startPolling(load, intervalMs);
     return () => {
       alive = false;
-      clearInterval(id);
+      stop();
     };
   }, [key, intervalMs]);
   return quotes;
@@ -269,11 +284,10 @@ export function useNews(query: string, ticker = '', intervalMs = 120000): NewsIt
         | null;
       if (alive && j && Array.isArray(j.news)) setNews(j.news);
     };
-    load();
-    const id = setInterval(load, intervalMs);
+    const stop = startPolling(load, intervalMs);
     return () => {
       alive = false;
-      clearInterval(id);
+      stop();
     };
   }, [query, ticker, intervalMs]);
   return news;
@@ -445,9 +459,8 @@ export function useRiskStats(pairs: string[], rf: number, intervalMs = 1800000):
           holdingReturns: j.holdingReturns ?? {},
         });
     };
-    load();
-    const id = setInterval(load, intervalMs);
-    return () => { alive = false; clearInterval(id); };
+    const stop = startPolling(load, intervalMs);
+    return () => { alive = false; stop(); };
   }, [key, rf, intervalMs]);
   return stats;
 }
@@ -475,9 +488,8 @@ export function useBacktest(pairs: string[], rf: number, intervalMs = 21600000):
       const j = (await getJSON(`/api/backtest?symbols=${encodeURIComponent(key)}&rf=${rf}`)) as BacktestResult | null;
       if (alive && j && j.ok) setBt(j);
     };
-    load();
-    const id = setInterval(load, intervalMs);
-    return () => { alive = false; clearInterval(id); };
+    const stop = startPolling(load, intervalMs);
+    return () => { alive = false; stop(); };
   }, [key, rf, intervalMs]);
   return bt;
 }
@@ -503,9 +515,8 @@ export function useDividends(symbols: string[], intervalMs = 3600000): Record<st
         | null;
       if (alive && j && j.dividends) setDivs(j.dividends);
     };
-    load();
-    const id = setInterval(load, intervalMs);
-    return () => { alive = false; clearInterval(id); };
+    const stop = startPolling(load, intervalMs);
+    return () => { alive = false; stop(); };
   }, [key, intervalMs]);
   return divs;
 }
@@ -521,9 +532,8 @@ export function useSummary(symbols: string[], intervalMs = 900000): Record<strin
         | null;
       if (alive && j && j.summary) setSum(j.summary);
     };
-    load();
-    const id = setInterval(load, intervalMs);
-    return () => { alive = false; clearInterval(id); };
+    const stop = startPolling(load, intervalMs);
+    return () => { alive = false; stop(); };
   }, [key, intervalMs]);
   return sum;
 }
@@ -548,9 +558,8 @@ export function useFundamentals(symbol: string, intervalMs = 3600000): Fundament
         | null;
       if (alive && j && j.fundamentals && j.fundamentals.revenue != null) setF(j.fundamentals);
     };
-    load();
-    const id = setInterval(load, intervalMs);
-    return () => { alive = false; clearInterval(id); };
+    const stop = startPolling(load, intervalMs);
+    return () => { alive = false; stop(); };
   }, [symbol, intervalMs]);
   return f;
 }
@@ -563,9 +572,8 @@ export function useInsider(intervalMs = 600000): InsiderTrade[] {
       const j = (await getJSON('/api/insider?limit=14')) as { trades?: InsiderTrade[] } | null;
       if (alive && j && Array.isArray(j.trades)) setTrades(j.trades);
     };
-    load();
-    const id = setInterval(load, intervalMs);
-    return () => { alive = false; clearInterval(id); };
+    const stop = startPolling(load, intervalMs);
+    return () => { alive = false; stop(); };
   }, [intervalMs]);
   return trades;
 }
@@ -588,11 +596,10 @@ export function useMacro(intervalMs = 3600000): { policyRate: number | null; cpi
       const j = (await getJSON('/api/macro')) as { policyRate?: number | null; cpi?: number | null; bond10y?: number | null } | null;
       if (alive && j) setMacro({ policyRate: j.policyRate ?? null, cpi: j.cpi ?? null, bond10y: j.bond10y ?? null });
     };
-    load();
-    const id = setInterval(load, intervalMs);
+    const stop = startPolling(load, intervalMs);
     return () => {
       alive = false;
-      clearInterval(id);
+      stop();
     };
   }, [intervalMs]);
   return macro;

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { isAlertRule, isTriggeredAlert, loadValidArray } from './storage';
+import { isAlertRule, isTriggeredAlert, loadValidArray, saveLS, loadLS } from './storage';
 
 // Minimal in-memory localStorage so these pure helpers can be tested in the node environment.
 beforeAll(() => {
@@ -61,5 +61,23 @@ describe('loadValidArray', () => {
     localStorage.setItem('bad_json', '{not json');
     expect(loadValidArray('bad_json', isAlertRule)).toEqual([]);
     localStorage.removeItem('bad_json');
+  });
+});
+
+describe('saveLS', () => {
+  it('round-trips a value through loadLS', () => {
+    saveLS('rt_key', { a: 1, b: ['x'] });
+    expect(loadLS('rt_key', null)).toEqual({ a: 1, b: ['x'] });
+    localStorage.removeItem('rt_key');
+  });
+
+  it('never throws when setItem fails (e.g. private mode / quota exceeded)', () => {
+    const original = localStorage.setItem;
+    localStorage.setItem = () => {
+      throw new DOMException('QuotaExceededError');
+    };
+    // Would crash the app (and trip the error boundary) without the internal try/catch.
+    expect(() => saveLS('any', { big: 'payload' })).not.toThrow();
+    localStorage.setItem = original;
   });
 });

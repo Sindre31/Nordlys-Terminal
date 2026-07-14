@@ -41,6 +41,7 @@ import {
 } from './ledger';
 import {
   loadLS,
+  saveLS,
   loadValidArray,
   isAlertRule,
   isTriggeredAlert,
@@ -384,27 +385,20 @@ export default function Terminal() {
   });
   const [watchTickers, setWatchTickers] = useState<string[]>(() => loadValidArray('nordlys_watchlist', (v): v is string => typeof v === 'string'));
   const [editWatch, setEditWatch] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const [idxRange, setIdxRange] = useState('1mo'); // OSEBX overview chart timeframe
+  const [detailRange, setDetailRange] = useState('1mo'); // stock-detail chart timeframe
   const [alertRules, setAlertRules] = useState<AlertRule[]>(() => loadValidArray('nordlys_alert_rules', isAlertRule));
   const [triggeredToday, setTriggeredToday] = useState<TriggeredAlert[]>(() => loadValidArray('nordlys_alert_triggers', isTriggeredAlert));
   const [newAlertSym, setNewAlertSym] = useState('EQNR');
   const [newAlertCond, setNewAlertCond] = useState<'above' | 'below' | 'pct'>('above');
   const [newAlertPrice, setNewAlertPrice] = useState('');
 
-  useEffect(() => {
-    localStorage.setItem('nordlys_tab', JSON.stringify(tab));
-  }, [tab]);
-  useEffect(() => {
-    localStorage.setItem('nordlys_risk', JSON.stringify(risk));
-  }, [risk]);
-  useEffect(() => {
-    localStorage.setItem('nordlys_watchlist', JSON.stringify(watchTickers));
-  }, [watchTickers]);
-  useEffect(() => {
-    localStorage.setItem('nordlys_alert_rules', JSON.stringify(alertRules));
-  }, [alertRules]);
-  useEffect(() => {
-    localStorage.setItem('nordlys_alert_triggers', JSON.stringify(triggeredToday));
-  }, [triggeredToday]);
+  useEffect(() => { saveLS('nordlys_tab', tab); }, [tab]);
+  useEffect(() => { saveLS('nordlys_risk', risk); }, [risk]);
+  useEffect(() => { saveLS('nordlys_watchlist', watchTickers); }, [watchTickers]);
+  useEffect(() => { saveLS('nordlys_alert_rules', alertRules); }, [alertRules]);
+  useEffect(() => { saveLS('nordlys_alert_triggers', triggeredToday); }, [triggeredToday]);
 
   const active = 'padding:5px 12px; border-radius:5px; background:#1D2229; color:#fff; cursor:pointer; font-size:12.5px;';
   const idle = 'padding:5px 12px; border-radius:5px; color:#8A929E; cursor:pointer; font-size:12.5px;';
@@ -424,6 +418,30 @@ export default function Terminal() {
       }
     },
   });
+  // Renders a functional chart-timeframe pill. Yahoo range codes: 1D→1d, 1W→5d, 1M→1mo, 6M→6mo,
+  // 1Y→1y. Clicking re-fetches the series via useChart (the api/chart handler picks the interval).
+  const tfSpan = (label: string, rng: string, curRange: string, setRange: (r: string) => void, pad: string) => (
+    <span
+      key={label}
+      {...clickable(() => setRange(rng), `${label} timeframe`)}
+      style={css(`${pad} border-radius:5px; ${curRange === rng ? 'background:#1D2229; color:#fff;' : 'color:#8A929E;'}`)}
+    >{label}</span>
+  );
+  const TF_INDEX: [string, string][] = [['1D', '1d'], ['1W', '5d'], ['1M', '1mo'], ['1Y', '1y']];
+  const TF_DETAIL: [string, string][] = [['1D', '1d'], ['1W', '5d'], ['1M', '1mo'], ['6M', '6mo'], ['1Y', '1y']];
+  // Jump to a symbol from the header search: match an internal ticker or a company-name prefix,
+  // open its detail panel, and clear the box. No-op on an unknown query.
+  const runSearch = () => {
+    const q = searchInput.trim().toUpperCase();
+    if (!q) return;
+    const byTicker = Object.keys(base).find((t) => t === q);
+    const byName = Object.keys(base).find((t) => base[t].name.toUpperCase().startsWith(q));
+    const hit = byTicker || byName;
+    if (hit) {
+      setStock(hit);
+      setSearchInput('');
+    }
+  };
 
   // ---- Live data (falls back to the designed values until it loads) ----
   const live: QuoteMap = useQuotes(ALL_SYMBOLS);
@@ -442,8 +460,8 @@ export default function Terminal() {
   const dnbFund = useFundamentals('DNB.OL');
   const marketNews = useNews('');
   const stockNews = useNews(stock ? stocks()[stock]?.name || '' : '', stock || '');
-  const idxCloses = useChart('OSEBX.OL', '1mo');
-  const detailCloses = useChart(stock ? STOCK_YAHOO[stock] || stock : null, '1mo');
+  const idxCloses = useChart('OSEBX.OL', idxRange);
+  const detailCloses = useChart(stock ? STOCK_YAHOO[stock] || stock : null, detailRange);
   const quantModel = useQuantModel(risk);
 
   // Merge live quotes over the static base, preserving the shape the UI uses.
@@ -579,7 +597,7 @@ export default function Terminal() {
     return isValidLedger(saved) ? saved : null; // discard incompatible/corrupt data → re-seed fresh
   });
   useEffect(() => {
-    if (ledger) localStorage.setItem('nordlys_portfolio_ledger', JSON.stringify(ledger));
+    if (ledger) saveLS('nordlys_portfolio_ledger', ledger);
   }, [ledger]);
 
   // First-ever load: seed the ledger from today's model selection. Inception is genuinely
@@ -892,14 +910,6 @@ export default function Terminal() {
     { ticker: 'MKT', source: 'DN', time: '09:30', title: 'Norges Bank holds policy rate at 4.25%, signals cut in autumn' },
   ];
 
-  const calendar = [
-    { day: '22', name: 'Equinor · Q2 2026', when: 'Before open', ticker: 'EQNR', period: 'Q2' },
-    { day: '24', name: 'DNB Bank · Q2 2026', when: '07:00 CET', ticker: 'DNB', period: 'Q2' },
-    { day: '25', name: 'Yara International · Q2 2026', when: '06:30 CET', ticker: 'YAR', period: 'Q2' },
-    { day: '28', name: 'Mowi · Q2 2026', when: '06:30 CET', ticker: 'MOWI', period: 'Q2' },
-    { day: '30', name: 'Aker BP · Q2 2026', when: 'After close', ticker: 'AKRBP', period: 'Q2' },
-  ];
-
   const cur = S[stock as string] || S.EQNR;
 
   const analystRecs = [
@@ -998,14 +1008,8 @@ export default function Terminal() {
     })
     .sort((a, b) => b.rel - a.rel)
     .slice(0, 6);
-  const aiSignals = (newsSignals.length >= 3 ? newsSignals : [
-    { cat: 'US Politics', source: 'Reuters', sent: 'Watch', text: 'Trump floats 25% tariff on European aluminium imports at rally', tickers: 'NHY · YAR', time: '13:52' },
-    { cat: 'Conflict', source: 'Bloomberg', sent: 'Bullish', text: 'Tanker reroutes reported near Strait of Hormuz after new incident', tickers: 'EQNR · AKRBP · FRO', time: '12:20' },
-    { cat: 'Defence', source: 'AP', sent: 'Bullish', text: 'European members pledge higher defence budgets at summit', tickers: 'KOG', time: '11:05' },
-    { cat: 'Peace', source: 'AFP', sent: 'Bearish', text: 'Ceasefire talks reported to advance — could ease crude risk premium', tickers: 'EQNR · KOG', time: '10:18' },
-    { cat: 'Trade', source: 'CNBC', sent: 'Bullish', text: 'Signs of US–China tariff de-escalation lift global risk appetite', tickers: 'GLOBAL · DNBTEK', time: '09:40' },
-    { cat: 'US Politics', source: 'Reuters', sent: 'Watch', text: 'Trump reiterates push to “drill, baby, drill” — medium-term oil supply risk', tickers: 'EQNR · AKRBP', time: '08:55' },
-  ]).map((sg) => ({ ...sg, sentEl: sentBadge(sg.sent) }));
+  // Real newswire headlines only — no fabricated fallback. Empty until the live feed responds.
+  const aiSignals = newsSignals.map((sg) => ({ ...sg, sentEl: sentBadge(sg.sent) }));
 
   // The portfolio's only action so far is today's initial buy into each model-selected name —
   // no fabricated intraday trade history, consistent with the empty rebalance history above.
@@ -1119,16 +1123,14 @@ export default function Terminal() {
     .sort((a, b) => b.v - a.v)
     .map((t) => ({ ...t, barEl: contribBar(t.v, 4.5), valEl: ppVal(t.v) }));
 
-  // Modeled Brinson split, rescaled to sum to the real active return.
-  const attrFactor = attrLive ? attrActive / 6.8 : 0;
-  const attrEffects = [
-    { label: 'Allocation effect', v: 2.6 },
-    { label: 'Selection effect', v: 3.4 },
-    { label: 'FX effect', v: 1.2 },
-    { label: 'Timing / rebalance', v: 0.4 },
-    { label: 'Costs & fees', v: -0.8 },
-  ].map((e) => { const v = e.v * attrFactor; return { ...e, v, barEl: contribBar(v, 4 * Math.max(1, Math.abs(attrFactor))), valEl: ppVal(v) }; });
-
+  // Real book-vs-benchmark decomposition (1y trailing). A full Brinson allocation/selection split
+  // needs benchmark sector weights, which the free Yahoo data doesn't expose — so instead of the
+  // previous fabricated 5-effect split (fixed numbers rescaled to the active return) we show the
+  // genuinely computed pieces: portfolio return, OSEBX return, and their difference.
+  const attrDecomp = [
+    { label: 'Book (portfolio)', val: attrTotalStr, color: '#F2F4F7' },
+    { label: 'OSEBX benchmark', val: attrBenchStr, color: '#9AA1AC' },
+  ];
 
   const fxHoldings = [...port.rows]
     .sort((a, b) => b.valueNok - a.valueNok)
@@ -1155,13 +1157,6 @@ export default function Terminal() {
     { ticker: 'KOG', ex: '20 Aug', amount: 'NOK 12.50', yield: '2.3%' },
     { ticker: 'XOM', ex: '08 Aug', amount: '$0.99', yield: '3.3%' },
   ];
-  const holdingReports = [
-    { ticker: 'EQNR', period: 'Q2 2026 results', date: '22 Jul' },
-    { ticker: 'YAR', period: 'Q2 2026 results', date: '25 Jul' },
-    { ticker: 'MOWI', period: 'Q2 2026 results', date: '28 Jul' },
-    { ticker: 'AKRBP', period: 'Q2 2026 results', date: '30 Jul' },
-  ].map((r) => ({ ...r, open: S[r.ticker] ? open(r.ticker) : undefined }));
-
   const rbBase = 'flex:0 0 auto; border:1px solid #23272E; border-radius:8px; padding:8px 11px; cursor:pointer;';
   const rbActive = 'flex:0 0 auto; border:1px solid #7C5CFF; background:#181233; border-radius:8px; padding:8px 11px; cursor:pointer;';
   // Real rebalance log from the persisted ledger — one entry for the initial allocation, plus
@@ -1232,15 +1227,6 @@ export default function Terminal() {
     return { label: r.ticker, val: pct.toFixed(0) + '%', pct: bar, barEl: hbar(bar, '#6FA8FF') };
   });
   const top5Pct = concSorted.slice(0, 5).reduce((s, r) => s + (port.totalValue > 0 ? (r.valueNok / port.totalValue) * 100 : 0), 0);
-
-  const scenarios = [
-    { name: 'Trump 25% EU metals tariff', how: 'European aluminium exporters de-rate; input-cost noise across materials.', v: -1.8, hit: 'NHY · YAR' },
-    { name: 'Mideast ceasefire', how: 'Crude risk premium unwinds; energy and defence give back gains.', v: -2.4, hit: 'EQNR · KOG · XOM' },
-    { name: 'Oil +10% supply shock', how: 'Higher crude lifts producers and oil-services leverage.', v: 2.9, hit: 'AKRBP · EQNR · XOM' },
-    { name: 'Norges Bank surprise hold', how: 'Rate-cut hopes fade; long-duration growth and funds soften.', v: -0.9, hit: 'NVDA · DNBTEK' },
-    { name: 'Broad risk-off (−5% equities)', how: 'Portfolio beta amplifies a market-wide drawdown.', v: -5.9, hit: 'All beta' },
-    { name: 'US–China trade deal', how: 'Global risk appetite improves; diversified beta rallies.', v: 1.6, hit: 'GLOBAL · NVDA' },
-  ].map((sc) => ({ ...sc, impactEl: scImpact(sc.v) }));
 
   // ---- Derived live values ----
   const indexTiles = INDEX_TILES.map((t) => {
@@ -1358,24 +1344,24 @@ export default function Terminal() {
   // (no confirmed next one yet, common for smaller caps) rather than a genuinely upcoming one, so
   // this filters to future dates only rather than showing a stale report as "upcoming".
   const nowSec = Date.now() / 1000;
+  // Only real, future earnings dates from Yahoo's calendarEvents — no hardcoded fallback list.
+  // Empty until the consensus feed responds, so the panel shows an honest "awaiting" state rather
+  // than stale invented dates.
   const earningsRows = OSLO_SET.map((t) => ({ t, e: sumOf(t)?.earningsDate ?? null })).filter((x) => x.e && x.e > nowSec) as { t: string; e: number }[];
-  const calendarLive = earningsRows.length >= 3;
-  const calendarDisplay = calendarLive
-    ? earningsRows
-        .sort((a, b) => a.e - b.e)
-        .slice(0, 6)
-        .map((x) => {
-          const dm = fmtDayMon(x.e);
-          return {
-            day: dm.day,
-            mon: dm.mon,
-            name: `${S[x.t]?.name || x.t} · Q results`,
-            when: new Date(x.e * 1000).toLocaleDateString('en-GB', { weekday: 'long' }),
-            ticker: x.t,
-            period: 'Q',
-          };
-        })
-    : calendar.map((c) => ({ ...c, mon: 'Jul' }));
+  const calendarDisplay = earningsRows
+    .sort((a, b) => a.e - b.e)
+    .slice(0, 6)
+    .map((x) => {
+      const dm = fmtDayMon(x.e);
+      return {
+        day: dm.day,
+        mon: dm.mon,
+        name: `${S[x.t]?.name || x.t} · Q results`,
+        when: new Date(x.e * 1000).toLocaleDateString('en-GB', { weekday: 'long' }),
+        ticker: x.t,
+        period: 'Q',
+      };
+    });
 
   const heldReportSyms = POSITIONS.map((p) => p.ticker);
   const heldReportsLive = heldReportSyms
@@ -1384,7 +1370,7 @@ export default function Terminal() {
     .sort((a, b) => (a.e as number) - (b.e as number))
     .slice(0, 4)
     .map((x) => ({ ticker: x.t, period: 'Q results', date: fmtDayMon(x.e).label, open: S[x.t] ? open(x.t) : undefined }));
-  const holdingReportsDisplay = heldReportsLive.length ? heldReportsLive : holdingReports;
+  const holdingReportsDisplay = heldReportsLive; // real future earnings only; empty → honest "awaiting" state
 
   // ---- Dividends (Yahoo events) — real amounts + yield vs live price ----
   const divsLive = POSITIONS.map((p) => p.ticker)
@@ -1443,6 +1429,33 @@ export default function Terminal() {
     }
   });
   const portBeta = betaW > 0 ? betaNum / betaW : null;
+
+  // Stress scenarios are now a genuine first-order sensitivity: portfolio impact = beta × index
+  // move, using the real beta (history-engine regression beta, or the allocation-weighted average
+  // of holdings' Yahoo betas as a live fallback). No fabricated geopolitical pp figures. Impacts
+  // show "—" until a beta is available. This is a linear approximation — it deliberately excludes
+  // idiosyncratic/sector effects, which the subtitle states.
+  const effBeta = riskStats.beta ?? portBeta;
+  const betaRanked = POSITIONS
+    .map((p) => ({ t: p.ticker, b: sumOf(p.ticker)?.beta ?? null }))
+    .filter((x): x is { t: string; b: number } => x.b != null)
+    .sort((a, b) => b.b - a.b);
+  const topBetaName = betaRanked.length ? betaRanked[0].t : null;
+  const mostExposed = topBetaName ? `${topBetaName} (β ${betaRanked[0].b.toFixed(2)})` : '—';
+  const scenarios = [
+    { name: 'OSEBX −10%', how: 'Broad market drawdown — beta amplifies the index move.', shock: -10 },
+    { name: 'OSEBX −5%', how: 'Moderate risk-off across Oslo Børs.', shock: -5 },
+    { name: 'OSEBX −2%', how: 'Mild market pullback.', shock: -2 },
+    { name: 'OSEBX +5%', how: 'Broad relief rally — beta works in your favour.', shock: 5 },
+    { name: 'OSEBX +10%', how: 'Strong risk-on move.', shock: 10 },
+  ].map((sc) => {
+    const v = effBeta != null ? effBeta * sc.shock : null;
+    return {
+      ...sc,
+      hit: mostExposed,
+      impactEl: v == null ? <span className="mono" style={css('color:#8A929E;')}>—</span> : scImpact(v),
+    };
+  });
 
   // Real risk metrics from the history engine. While it loads (or if it fails) show '—' rather
   // than fabricated-looking designed numbers. Beta keeps a genuine live fallback: the allocation-
@@ -1585,10 +1598,24 @@ export default function Terminal() {
   const sSym = stock || 'EQNR', sName = cur.name, sLast = cur.last, sOpen = cur.open, sRange = cur.range, sVol = cur.vol, sCap = cur.cap;
   const sCur = cur.cur || 'NOK', sChgEl = chgEl(cur.chg, 14);
   const sHasThesis = !!th;
-  const sThesis = th ? th.text : '', sSize = th ? th.size : '', sTarget = th ? th.target : '', sSince = th ? th.since : '', sRole = th ? th.role : '';
-  const sUpsideEl = upside(th ? th.upside : 0);
-  const sRecoEl = actBadge(th ? th.reco : 'HOLD');
+  const sThesis = th ? th.text : '', sRole = th ? th.role : '';
   const sRisks = th ? th.risks : [];
+  // Stat tiles come from real data, not the static thesis: analyst consensus target (Yahoo),
+  // upside vs the live price, the model's own current signal, and — if the name is actually held —
+  // its live allocation and the ledger inception date. Everything falls back to "—" when absent,
+  // so nothing here is a fabricated per-stock number.
+  const sYh = STOCK_YAHOO[sSym];
+  const sSum = sYh ? summary[sYh] : undefined;
+  const sLivePrice = sYh ? live[sYh]?.price : undefined;
+  const sPfx = isOsloListed(sSym) ? '' : '$';
+  const sTarget = sSum?.targetMean != null ? sPfx + fmtNum(sSum.targetMean, sSum.targetMean >= 500 ? 0 : 1) : '—';
+  const sUpsidePct = sSum?.targetMean != null && sLivePrice ? ((sSum.targetMean - sLivePrice) / sLivePrice) * 100 : null;
+  const sUpsideEl = sUpsidePct == null ? <span className="mono" style={css('font-size:14px; color:#8A929E;')}>—</span> : upside(sUpsidePct);
+  const sHeld = POSITIONS.some((p) => p.ticker === sSym);
+  const sSize = sHeld ? port.allocOf(sSym).toFixed(1) + '%' : 'Not held';
+  const sSince = sHeld && ledger ? ledger.inceptionDate : '—';
+  const sModelAct = quantModel.signals.find((s) => s.ticker === sSym)?.act ?? 'HOLD';
+  const sRecoEl = actBadge(sModelAct);
 
   const qmReady = quantModel.ready && !!quantModel.backtest;
   const qmMetrics = quantModel.backtest?.metrics;
@@ -1628,8 +1655,17 @@ export default function Terminal() {
       <span {...clickable(goBt)} aria-current={tab === 'bt' ? 'page' : undefined} style={css(navBt)}>Backtest</span>
     </nav>
     <div style={css("flex:1;")}></div>
-    <div className="hide-sm" style={css("display:flex; align-items:center; gap:8px; background:#191D24; border:1px solid #23272E; border-radius:7px; padding:6px 11px; width:220px; color:#5B626C; font-size:12.5px;")}>
-      <span className="mono">⌕</span> Search symbol…
+    <div className="hide-sm" style={css("display:flex; align-items:center; gap:8px; background:#191D24; border:1px solid #23272E; border-radius:7px; padding:6px 11px; width:220px; font-size:12.5px;")}>
+      <span className="mono" style={css("color:#5B626C;")}>⌕</span>
+      <input
+        value={searchInput}
+        onChange={(e) => setSearchInput(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
+        placeholder="Search symbol…"
+        aria-label="Search symbol"
+        className="mono"
+        style={css("flex:1; min-width:0; background:transparent; border:none; outline:none; color:#EDEFF2; font-size:12.5px; font-family:inherit;")}
+      />
     </div>
     {(() => {
       const { status, newest } = pipelineStatus(dataHealth);
@@ -1716,10 +1752,7 @@ export default function Terminal() {
             <span style={css("font-size:12px; color:#8A929E;")}>Oslo Børs Benchmark Index</span>
             <div style={css("flex:1;")}></div>
             <div className="mono" style={css("display:flex; gap:3px; font-size:11px;")}>
-              <span style={css("padding:3px 8px; border-radius:4px; color:#8A929E; cursor:pointer;")}>1D</span>
-              <span style={css("padding:3px 8px; border-radius:4px; background:#1D2229; color:#fff; cursor:pointer;")}>1W</span>
-              <span style={css("padding:3px 8px; border-radius:4px; color:#8A929E; cursor:pointer;")}>1M</span>
-              <span style={css("padding:3px 8px; border-radius:4px; color:#8A929E; cursor:pointer;")}>1Y</span>
+              {TF_INDEX.map(([label, rng]) => tfSpan(label, rng, idxRange, setIdxRange, 'padding:3px 8px;'))}
             </div>
           </div>
           <div style={css("display:flex; align-items:baseline; gap:10px; margin-top:6px;")}>
@@ -1919,6 +1952,9 @@ export default function Terminal() {
         
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
           <div style={css("padding:14px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Upcoming earnings</div>
+          {calendarDisplay.length === 0 && (
+            <div style={css("padding:22px 18px; font-size:12.5px; color:#5B626C; line-height:1.5;")}>Awaiting confirmed earnings dates from the analyst-consensus feed. No dates are shown until the live feed responds.</div>
+          )}
           {calendarDisplay.map((c, i) => (<React.Fragment key={i}>
             <div style={css("display:flex; align-items:center; gap:14px; padding:13px 18px; border-bottom:1px solid #191D23;")}>
               <div style={css("width:46px; text-align:center; flex:0 0 auto;")}><div className="mono" style={css("font-size:17px; font-weight:600; color:#F2F4F7;")}>{c.day}</div><div style={css("font-size:10px; color:#5B626C; text-transform:uppercase;")}>{c.mon}</div></div>
@@ -2277,7 +2313,10 @@ export default function Terminal() {
         
         <div style={css("display:flex; flex-direction:column; gap:16px;")}>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div style={css("display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #23272E;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Signal feed</span><span className="mono" style={css("font-size:10.5px; color:#B79BFF;")}>◆ analysing</span></div>
+            <div style={css("display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #23272E;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Signal feed</span><span className="mono" style={css("font-size:10px; color:#7C8492;")} title="Sentiment is a keyword-based tag on live headlines, not a machine-learning score.">keyword-tagged · live headlines</span></div>
+            {aiSignals.length === 0 && (
+              <div style={css("padding:16px; font-size:12px; color:#5B626C; line-height:1.5;")}>Awaiting the live newswire (E24 · Oslo Børs). Headlines are tagged Bullish / Bearish / Watch by keyword — a simple heuristic, not a sentiment model.</div>
+            )}
             {aiSignals.map((sg, i) => (<React.Fragment key={i}>
               <div style={css("padding:12px 16px; border-bottom:1px solid #191D23;")}>
                 <div className="mono" style={css("display:flex; align-items:center; gap:8px; font-size:10px; margin-bottom:6px;")}><span style={css("color:#7C8492;")}>{sg.cat}</span><span style={css("color:#5B626C;")}>·</span><span style={css("color:#5B626C;")}>{sg.source}</span><span style={css("margin-left:auto;")}>{sg.sentEl}</span></div>
@@ -2323,6 +2362,9 @@ export default function Terminal() {
               </div>
             </React.Fragment>))}
             <div style={css("padding:12px 16px 4px;")}><span className="mono" style={css("font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C;")}>Reports — held names</span></div>
+            {holdingReportsDisplay.length === 0 && (
+              <div style={css("padding:8px 16px 12px; font-size:11.5px; color:#5B626C; line-height:1.5;")}>No confirmed upcoming earnings dates for held names yet.</div>
+            )}
             {holdingReportsDisplay.map((r, i) => (<React.Fragment key={i}>
               <div onClick={r.open} style={css("display:grid; grid-template-columns:56px 1fr auto; gap:10px; align-items:center; padding:9px 16px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
                 <span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{r.ticker}</span>
@@ -2425,7 +2467,7 @@ export default function Terminal() {
       <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden; margin-top:18px;")}>
         <div style={css("display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid #23272E;")}>
           <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Scenario stress tests</span>
-          <span className="mono" style={css("font-size:10.5px; color:#5B626C;")}>modelled 1-day portfolio impact</span>
+          <span className="mono" style={css("font-size:10.5px; color:#5B626C;")}>portfolio β {effBeta != null ? effBeta.toFixed(2) : '—'} × index move · first-order, excludes sector effects</span>
         </div>
         <div className="mono" style={css("display:grid; grid-template-columns:1.8fr 2.6fr 1fr 1.4fr; gap:12px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
           <span>Scenario</span><span>Transmission</span><span style={css("text-align:right;")}>Impact</span><span>Most exposed</span>
@@ -2455,7 +2497,7 @@ export default function Terminal() {
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Foreign-currency exposure</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{Math.round(foreignPct)}%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>non-NOK holdings</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD exposure</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#2F6E90; margin-top:5px;")}>{Math.round(usdPct)}%</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>NOK {fmtNum(ccyTotals.USD, 0)}</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Currency hedged</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>0%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>fully unhedged</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>FX effect · YTD</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>+2.1%</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>weaker NOK tailwind</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>FX effect · YTD</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#8A929E; margin-top:5px;")}>—</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>needs cost-basis FX history</div></div>
       </div>
 
       <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
@@ -2536,19 +2578,19 @@ export default function Terminal() {
       <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
         
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-          <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:14px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Active return decomposition</span><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#B79BFF;")}>Brinson</span></div>
-          {attrEffects.map((e, i) => (<React.Fragment key={i}>
+          <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:14px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Active return decomposition</span><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#5B626C;")}>1y trailing</span></div>
+          {attrDecomp.map((e, i) => (<React.Fragment key={i}>
             <div style={css("display:flex; align-items:center; gap:12px; margin-bottom:12px;")}>
-              <span style={css("width:132px; flex:0 0 auto; font-size:12.5px; color:#DDE1E7;")}>{e.label}</span>
-              <div style={css("flex:1; height:10px; background:#1A1E24; border-radius:5px; position:relative; overflow:hidden;")}>{e.barEl}</div>
-              <span style={css("width:52px; text-align:right; flex:0 0 auto;")}>{e.valEl}</span>
+              <span style={css("flex:1; font-size:12.5px; color:#DDE1E7;")}>{e.label}</span>
+              <span className="mono" style={css(`font-size:14px; color:${e.color}; font-weight:600;`)}>{e.val}</span>
             </div>
           </React.Fragment>))}
-          <div style={css("display:flex; align-items:center; gap:10px; margin-top:8px; padding-top:12px; border-top:1px solid #1E1834;")}>
-            <span style={css("font-size:12.5px; color:#F2F4F7; font-weight:600;")}>Total active return</span>
+          <div style={css("display:flex; align-items:center; gap:10px; margin-top:4px; padding-top:12px; border-top:1px solid #1E1834;")}>
+            <span style={css("font-size:12.5px; color:#F2F4F7; font-weight:600;")}>Active (excess) return</span>
             <div style={css("flex:1;")}></div>
             <span className="mono" style={css("font-size:14px; color:#B79BFF; font-weight:600;")}>{attrActiveStr}</span>
           </div>
+          <div style={css("font-size:10.5px; color:#5B626C; margin-top:12px; line-height:1.5;")}>A full Brinson allocation/selection split needs benchmark sector weights, which the free data doesn't expose. Shown here: real book vs OSEBX (1y); per-holding and per-theme contribution to the right.</div>
         </div>
 
         
@@ -2782,18 +2824,14 @@ export default function Terminal() {
       </div>
       <div style={css("flex:1;")}></div>
       <div style={css("display:flex; gap:8px; align-items:center;")}>
-        <button className="hide-sm" style={css("border:1px solid #2A2F37; background:#191D24; color:#DDE1E7; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>＋ Watchlist</button>
-        <button className="hide-sm" style={css("border:none; background:#2D5BD0; color:#fff; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Set alert</button>
+        <button onClick={() => setWatchTickers((prev) => prev.includes(sSym) ? prev.filter((t) => t !== sSym) : [...prev, sSym])} className="hide-sm" style={css("border:1px solid #2A2F37; background:#191D24; color:#DDE1E7; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>{watchTickers.includes(sSym) ? '✓ Watchlist' : '＋ Watchlist'}</button>
+        <button onClick={() => { setNewAlertSym(sSym); setStock(null); setTab('alerts'); }} className="hide-sm" style={css("border:none; background:#2D5BD0; color:#fff; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Set alert</button>
         <span {...clickable(closeStock, 'Close stock detail')} style={css("width:32px; height:32px; border-radius:8px; background:#191D24; border:1px solid #2A2F37; display:flex; align-items:center; justify-content:center; color:#9AA1AC; cursor:pointer; font-size:16px;")}>✕</span>
       </div>
     </div>
     <div style={css("padding:16px 26px 6px;")}>
       <div className="mono" style={css("display:flex; gap:3px; font-size:11px; margin-bottom:10px;")}>
-        <span style={css("padding:4px 10px; border-radius:5px; color:#8A929E; cursor:pointer;")}>1D</span>
-        <span style={css("padding:4px 10px; border-radius:5px; background:#1D2229; color:#fff; cursor:pointer;")}>1W</span>
-        <span style={css("padding:4px 10px; border-radius:5px; color:#8A929E; cursor:pointer;")}>1M</span>
-        <span style={css("padding:4px 10px; border-radius:5px; color:#8A929E; cursor:pointer;")}>6M</span>
-        <span style={css("padding:4px 10px; border-radius:5px; color:#8A929E; cursor:pointer;")}>1Y</span>
+        {TF_DETAIL.map(([label, rng]) => tfSpan(label, rng, detailRange, setDetailRange, 'padding:4px 10px;'))}
       </div>
       <svg viewBox="0 0 660 240" preserveAspectRatio="none" style={css("width:100%; height:240px; display:block;")}>
         <defs><linearGradient id="dtgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3DBB84" stopOpacity="0.26"/><stop offset="100%" stopColor="#3DBB84" stopOpacity="0"/></linearGradient></defs>
@@ -2816,33 +2854,35 @@ export default function Terminal() {
     {sHasThesis && (<>
     <div style={css("margin:16px 26px 0; border:1px solid #3B2F63; border-radius:12px; background:#120E22; overflow:hidden;")}>
       <div style={css("display:flex; align-items:center; gap:10px; padding:13px 18px; border-bottom:1px solid #221B38;")}>
-        <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#B79BFF; font-weight:600;")}>Why the AI holds this</span>
+        <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#B79BFF; font-weight:600;")}>Thesis &amp; context</span>
+        <span className="mono" style={css("font-size:10px; color:#7C8492;")}>model signal:</span>
         <span style={css("margin-left:auto;")}>{sRecoEl}</span>
       </div>
       <div style={css("padding:16px 18px;")}>
-        <p style={css("font-size:13px; line-height:1.6; color:#DDE1E7; margin:0;")}>{sThesis}</p>
-        
-        <div className="mono" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:0; margin-top:16px; border:1px solid #221B38; border-radius:10px; overflow:hidden;")}>
+        <div className="mono" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:0; border:1px solid #221B38; border-radius:10px; overflow:hidden;")}>
           <div style={css("padding:11px 13px; border-right:1px solid #221B38;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Allocation</div><div style={css("font-size:14px; color:#F2F4F7; margin-top:3px;")}>{sSize}</div></div>
-          <div style={css("padding:11px 13px; border-right:1px solid #221B38;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Price target</div><div style={css("font-size:14px; color:#F2F4F7; margin-top:3px;")}>{sTarget}</div></div>
+          <div style={css("padding:11px 13px; border-right:1px solid #221B38;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Consensus target</div><div style={css("font-size:14px; color:#F2F4F7; margin-top:3px;")}>{sTarget}</div></div>
           <div style={css("padding:11px 13px; border-right:1px solid #221B38;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Upside</div><div style={css("font-size:14px; margin-top:3px;")}>{sUpsideEl}</div></div>
           <div style={css("padding:11px 13px;")}><div style={css("font-size:10.5px; color:#7C8492;")}>Held since</div><div style={css("font-size:14px; color:#F2F4F7; margin-top:3px;")}>{sSince}</div></div>
         </div>
-        
-        <div style={css("margin-top:14px;")}><span style={css("font-size:11px; color:#7C8492;")}>Role in portfolio · </span><span style={css("font-size:12.5px; color:#DDE1E7;")}>{sRole}</span></div>
-        
+        <div className="mono" style={css("font-size:9.5px; color:#5B626C; margin-top:6px;")}>Target = Yahoo analyst consensus · upside vs live price · allocation &amp; held-since from the live ledger.</div>
+
+        <p style={css("font-size:13px; line-height:1.6; color:#DDE1E7; margin:16px 0 0;")}>{sThesis}</p>
+        <div style={css("margin-top:10px;")}><span style={css("font-size:11px; color:#7C8492;")}>Role in portfolio · </span><span style={css("font-size:12.5px; color:#DDE1E7;")}>{sRole}</span></div>
+        <div style={css("margin-top:10px; padding:8px 11px; border-radius:8px; background:#1A1330; border:1px solid #2A2145;")}><span style={css("font-size:10.5px; color:#9A8FC0; line-height:1.5;")}>Illustrative editorial context — static, not live-sourced reporting, and may not match the live model signal or holdings shown above.</span></div>
+
         <div style={css("margin-top:16px;")}>
-          <div style={css("font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:9px;")}>Signals behind the decision</div>
+          <div style={css("font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:9px;")}>Illustrative drivers</div>
           {sDrivers.map((d, i) => (<React.Fragment key={i}>
             <div style={css("display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid #1E1834;")}>
               <span style={css("flex:0 0 auto; margin-top:1px;")}>{d.sentEl}</span>
-              <div style={css("min-width:0;")}><div style={css("font-size:12.5px; color:#DDE1E7; line-height:1.45;")}>{d.text}</div><div className="mono" style={css("font-size:10px; color:#5B626C; margin-top:3px;")}>{d.meta}</div></div>
+              <div style={css("min-width:0;")}><div style={css("font-size:12.5px; color:#DDE1E7; line-height:1.45;")}>{d.text}</div></div>
             </div>
           </React.Fragment>))}
         </div>
-        
+
         <div style={css("margin-top:16px;")}>
-          <div style={css("font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:9px;")}>Key risks the AI is monitoring</div>
+          <div style={css("font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:9px;")}>Key risks</div>
           {sRisks.map((rk, i) => (<React.Fragment key={i}>
             <div style={css("display:flex; gap:9px; align-items:flex-start; padding:6px 0;")}>
               <span style={css("color:#E4655E; font-size:12px; margin-top:1px; flex:0 0 auto;")}>▲</span>

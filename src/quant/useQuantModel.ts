@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { STOCK_YAHOO } from '../data';
+import { STOCK_YAHOO, startPolling } from '../data';
 import { alignSeries, type RawSeries } from './align';
 import { runBacktest, runSplitValidation, type BacktestResult, type BacktestOptions, type SplitValidation } from './backtest';
 import { zScores } from './factors';
@@ -194,11 +194,10 @@ function useRawMarketData(): FetchState {
       }
     }
 
-    load();
-    const id = setInterval(load, REFRESH_MS);
+    const stop = startPolling(load, REFRESH_MS);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      stop();
     };
   }, []);
 
