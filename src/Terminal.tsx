@@ -1030,14 +1030,6 @@ export default function Terminal() {
   const th = thesis()[stock as string];
   const sDrivers = th ? th.drivers.map((d) => ({ ...d, sentEl: sentBadge(d.sent) })) : [];
 
-  const annualReturns = [
-    { year: '2017', v: 24.1, bench: '+17.0%' }, { year: '2018', v: -6.2, bench: '−1.8%' },
-    { year: '2019', v: 28.4, bench: '+19.2%' }, { year: '2020', v: 12.6, bench: '+4.6%' },
-    { year: '2021', v: 33.1, bench: '+23.4%' }, { year: '2022', v: -11.8, bench: '−1.0%' },
-    { year: '2023', v: 19.7, bench: '+9.9%' }, { year: '2024', v: 26.3, bench: '+9.1%' },
-    { year: '2025', v: 21.5, bench: '+14.2%' }, { year: '2026', v: 18.4, bench: '+11.6%' },
-  ].map((y) => ({ ...y, barEl: contribBar(y.v, 35), stratEl: ppVal(y.v) }));
-
   const insiderTrades = [
     { date: '09 Jul', ticker: 'EQNR', company: 'Equinor', person: 'Torgrim Reitan', role: 'CFO', side: 'BUY', shares: '15 000', value: 'NOK 4.68m', holding: '84 200' },
     { date: '08 Jul', ticker: 'KOG', company: 'Kongsberg Gr.', person: 'Geir Håøy', role: 'CEO', side: 'BUY', shares: '5 000', value: 'NOK 5.42m', holding: '41 500' },
@@ -1415,9 +1407,9 @@ export default function Terminal() {
       ? `last 45 days · Newsweb · ${insiderUnclassified} unclassified`
       : 'last 45 days · Newsweb'
     : '3:1 ratio';
-  const insiderSentiment = !insiderLive.length ? 'Bullish' : insiderBuys > insiderSells ? 'Bullish' : insiderSells > insiderBuys ? 'Bearish' : 'Mixed';
+  const insiderSentiment = insiderBuys > insiderSells ? 'Bullish' : insiderSells > insiderBuys ? 'Bearish' : 'Mixed';
   const insiderSentimentNote = !insiderLive.length
-    ? 'CEO/CFO buying cluster'
+    ? 'awaiting Newsweb feed'
     : insiderBuys === 0 && insiderSells === 0
       ? 'no disclosures classified buy/sell'
       : `${insiderBuys} buy vs ${insiderSells} sell disclosures`;
@@ -1435,14 +1427,17 @@ export default function Terminal() {
   });
   const portBeta = betaW > 0 ? betaNum / betaW : null;
 
-  // Real risk metrics from the history engine (fall back to designed values / weighted beta).
-  const rBeta = riskStats.beta != null ? riskStats.beta.toFixed(2) : portBeta != null ? portBeta.toFixed(2) : '1.18';
-  const rVol = riskStats.annVol != null ? riskStats.annVol.toFixed(1) + '%' : '21.4%';
-  const rVar = riskStats.var95 != null ? riskStats.var95.toFixed(1) + '%' : '−2.8%';
-  const rVarNok = riskStats.var95 != null ? '−NOK ' + fmtNum(Math.abs((riskStats.var95 / 100) * port.totalValue), 0) : '−NOK 36 000';
-  const rMdd = riskStats.maxDrawdown != null ? riskStats.maxDrawdown.toFixed(1) + '%' : '−14.2%';
-  const rSharpe = riskStats.sharpe != null ? riskStats.sharpe.toFixed(2) : '1.34';
-  const rVolNote = riskStats.annVol != null ? (riskStats.annVol > 20 ? 'elevated' : riskStats.annVol > 12 ? 'moderate' : 'low') : 'elevated';
+  // Real risk metrics from the history engine. While it loads (or if it fails) show '—' rather
+  // than fabricated-looking designed numbers. Beta keeps a genuine live fallback: the allocation-
+  // weighted average of the holdings' own Yahoo betas (not a made-up constant).
+  const rLoaded = riskStats.beta != null || riskStats.annVol != null;
+  const rBeta = riskStats.beta != null ? riskStats.beta.toFixed(2) : portBeta != null ? portBeta.toFixed(2) : '—';
+  const rVol = riskStats.annVol != null ? riskStats.annVol.toFixed(1) + '%' : '—';
+  const rVar = riskStats.var95 != null ? riskStats.var95.toFixed(1) + '%' : '—';
+  const rVarNok = riskStats.var95 != null ? '−NOK ' + fmtNum(Math.abs((riskStats.var95 / 100) * port.totalValue), 0) : rLoaded ? '' : 'loading…';
+  const rMdd = riskStats.maxDrawdown != null ? riskStats.maxDrawdown.toFixed(1) + '%' : '—';
+  const rSharpe = riskStats.sharpe != null ? riskStats.sharpe.toFixed(2) : '—';
+  const rVolNote = riskStats.annVol != null ? (riskStats.annVol > 20 ? 'elevated' : riskStats.annVol > 12 ? 'moderate' : 'low') : rLoaded ? '' : 'awaiting 1y history';
 
   // ---- Currency exposure derived from the live portfolio ----
   const ccyTotals: Record<string, number> = { NOK: port.cashNok, USD: 0, Mixed: 0 };
@@ -1460,6 +1455,16 @@ export default function Terminal() {
     { label: 'USD — US dollar', value: ccyTotals.USD, pct: usdPct, color: '#2F6E90' },
     { label: 'Global fund (basket)', value: ccyTotals.Mixed, pct: mixedPct, color: '#7C5CFF' },
   ].filter((r) => r.value > 0);
+  // Geography & account eligibility for the Risk tab, derived live from the same holdings (was
+  // previously hardcoded 60/23/17, which contradicted the real currency split on the FX tab).
+  const geoRows = [
+    { label: 'Norway · NOK', pct: nokPct, color: '#3DBB84' },
+    { label: 'United States · USD', pct: usdPct, color: '#2F6E90' },
+    { label: 'Global / diversified', pct: mixedPct, color: '#7C5CFF' },
+  ].filter((r) => r.pct > 0.05);
+  // US shares can't sit in an aksjesparekonto (ASK); everything else (Oslo shares, funds, cash) can.
+  const askPct = ((ccyTotals.NOK + ccyTotals.Mixed) / totV) * 100;
+  const outsideAskPct = usdPct;
 
   // ---- Featured report card (Yahoo fundamentals) ----
   const fmtBn = (v: number | null, cur = 'NOK') => {
@@ -1511,22 +1516,25 @@ export default function Terminal() {
       bLine: line(bc),
     };
   }
+  // Empty (→ loading state) rather than fabricated calendar-year returns until the real backtest lands.
   const btAnnual = btOk && backtest.annual && backtest.annual.length
     ? backtest.annual.map((a) => ({ year: a.year, v: a.p, bench: sgn(a.b), barEl: contribBar(a.p, 35), stratEl: ppVal(a.p) }))
-    : annualReturns;
+    : [];
+  // While the 10y backtest loads (or if it fails), show '—' rather than fabricated-looking
+  // designed numbers next to the "Loading…" pill.
   const btm = {
-    cagr: btOk ? sgn(bm!.cagr) : '+17.9%',
-    total: btOk ? sgn(bm!.totalReturn, 0) : '+468%',
-    vol: btOk ? bm!.annVol.toFixed(1) + '%' : '19.8%',
-    sharpe: btOk ? bm!.sharpe.toFixed(2) : '1.28',
-    sortino: btOk ? bm!.sortino.toFixed(2) : '1.71',
-    mdd: btOk ? bm!.maxDrawdown.toFixed(1) + '%' : '−24.6%',
-    alpha: btOk ? sgn(bm!.alpha) : '+5.4%',
-    beta: btOk ? bm!.beta.toFixed(2) : '1.12',
-    win: btOk ? bm!.winRate.toFixed(0) + '%' : '63%',
-    best: btOk ? sgn(bm!.bestYear) : '+33.1%',
-    worst: btOk ? bm!.worstYear.toFixed(1) + '%' : '−11.8%',
-    turnover: btOk ? bm!.turnover.toFixed(0) + '%' : '86%',
+    cagr: btOk ? sgn(bm!.cagr) : '—',
+    total: btOk ? sgn(bm!.totalReturn, 0) : '—',
+    vol: btOk ? bm!.annVol.toFixed(1) + '%' : '—',
+    sharpe: btOk ? bm!.sharpe.toFixed(2) : '—',
+    sortino: btOk ? bm!.sortino.toFixed(2) : '—',
+    mdd: btOk ? bm!.maxDrawdown.toFixed(1) + '%' : '—',
+    alpha: btOk ? sgn(bm!.alpha) : '—',
+    beta: btOk ? bm!.beta.toFixed(2) : '—',
+    win: btOk ? bm!.winRate.toFixed(0) + '%' : '—',
+    best: btOk ? sgn(bm!.bestYear) : '—',
+    worst: btOk ? bm!.worstYear.toFixed(1) + '%' : '—',
+    turnover: btOk ? bm!.turnover.toFixed(0) + '%' : '—',
   };
 
   const navMarkets = tab === 'markets' ? active : idle;
@@ -2011,7 +2019,7 @@ export default function Terminal() {
             <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>AI Portfolio</h2>
             <span style={css("font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#B79BFF; border:1px solid #3B2F63; background:#211B33; border-radius:20px; padding:3px 9px;")}>Autonomous</span>
           </div>
-          <p style={css("font-size:13px; color:#8A929E; margin:6px 0 0; max-width:620px; line-height:1.5;")}>Allocation is generated from macro &amp; geopolitical signals — US political headlines, conflict &amp; peace developments, trade &amp; energy flows — mapped to the full Nordnet universe of shares and funds — Oslo Børs, US markets and more. Non-EEA holdings are marked <span style={css("color:#C79A3D;")}>Outside ASK</span>.</p>
+          <p style={css("font-size:13px; color:#8A929E; margin:6px 0 0; max-width:620px; line-height:1.5;")}>Holdings are chosen by a systematic factor model — a composite of 6-month momentum, 13/52-week trend, low volatility, and a value &amp; quality tilt — scored across the tracked Oslo Børs and US universe, then equal-weighted into the top names for the chosen risk level. Non-EEA holdings are marked <span style={css("color:#C79A3D;")}>Outside ASK</span>. Illustrative, not investment advice.</p>
         </div>
         <div style={css("flex:1;")}></div>
         <div style={css("display:flex; flex-direction:column; align-items:flex-end; gap:8px;")}>
@@ -2322,23 +2330,24 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:14px;")}>Geography &amp; currency</div>
             <div style={css("display:flex; height:16px; border-radius:6px; overflow:hidden; gap:2px; margin-bottom:12px;")}>
-              <div style={css("width:60%; background:#3DBB84;")}></div><div style={css("width:23%; background:#2F6E90;")}></div><div style={css("width:17%; background:#7C5CFF;")}></div>
+              {geoRows.map((g, i) => (<div key={i} style={css(`width:${g.pct}%; background:${g.color};`)}></div>))}
             </div>
             <div className="mono" style={css("display:flex; flex-wrap:wrap; gap:16px; font-size:11.5px; color:#9AA1AC;")}>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#3DBB84;")}></span>Norway · NOK 60%</span>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#2F6E90;")}></span>United States · USD 23%</span>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#7C5CFF;")}></span>Global / diversified 17%</span>
+              {geoRows.map((g, i) => (
+                <span key={i} style={css("display:flex; align-items:center; gap:6px;")}><span style={css(`width:9px;height:9px;border-radius:2px;background:${g.color};`)}></span>{g.label} {g.pct.toFixed(0)}%</span>
+              ))}
             </div>
           </div>
-          
+
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:14px;")}>Account eligibility</div>
             <div style={css("display:flex; height:16px; border-radius:6px; overflow:hidden; gap:2px; margin-bottom:12px;")}>
-              <div style={css("width:77%; background:#3DBB84;")}></div><div style={css("width:23%; background:#C79A3D;")}></div>
+              {askPct > 0.05 && <div style={css(`width:${askPct}%; background:#3DBB84;`)}></div>}
+              {outsideAskPct > 0.05 && <div style={css(`width:${outsideAskPct}%; background:#C79A3D;`)}></div>}
             </div>
             <div className="mono" style={css("display:flex; flex-wrap:wrap; gap:16px; font-size:11.5px; color:#9AA1AC;")}>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#3DBB84;")}></span>Aksjesparekonto (EEA) 77%</span>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#C79A3D;")}></span>Investeringskonto · outside ASK 23%</span>
+              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#3DBB84;")}></span>Aksjesparekonto (EEA) {askPct.toFixed(0)}%</span>
+              {outsideAskPct > 0.05 && <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#C79A3D;")}></span>Investeringskonto · outside ASK {outsideAskPct.toFixed(0)}%</span>}
             </div>
           </div>
         </div>
@@ -2547,16 +2556,18 @@ export default function Terminal() {
 
       
       <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Net insider flow · 30d</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{insiderLive.length ? '—' : '+NOK 12.4m'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderLive.length ? 'no transaction value in feed' : 'net buying'}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Buy / sell disclosures</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{insiderLive.length ? `${insiderBuys} / ${insiderSells}` : '6 / 2'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderDisclosuresLabel}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sentiment</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{insiderSentiment}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderSentimentNote}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Largest transaction</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{insiderLive.length ? '—' : 'MOWI'}</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderLive.length ? 'no transaction value in feed' : '−NOK 7.8m sell'}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Net insider flow · 30d</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>—</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderLive.length ? 'no transaction value in feed' : 'awaiting Newsweb feed'}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Buy / sell disclosures</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{insiderLive.length ? `${insiderBuys} / ${insiderSells}` : '—'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderDisclosuresLabel}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sentiment</div><div className="mono" style={css(`font-size:21px; font-weight:600; margin-top:5px; color:${insiderLive.length ? '#3DBB84' : '#8A929E'};`)}>{insiderLive.length ? insiderSentiment : '—'}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderSentimentNote}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Largest transaction</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>—</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{insiderLive.length ? 'no transaction value in feed' : 'awaiting Newsweb feed'}</div></div>
       </div>
 
       
-      <div style={css("display:flex; align-items:center; gap:12px; border:1px solid #1F5C43; background:#0F211A; border-radius:12px; padding:13px 16px; margin-bottom:18px;")}>
-        <span style={css("width:8px; height:8px; border-radius:2px; background:#3DBB84; flex:0 0 auto;")}></span>
-        <span style={css("font-size:13px; color:#DDE1E7;")}><span style={css("font-weight:600; color:#3DBB84;")}>AI note.</span> Cluster of CEO/CFO purchases in EQNR, KOG and AKRBP reinforces the portfolio's energy &amp; defence conviction — factored into the current signal score.</span>
+      <div style={css("display:flex; align-items:center; gap:12px; border:1px solid #2A2F37; background:#101317; border-radius:12px; padding:13px 16px; margin-bottom:18px;")}>
+        <span style={css("width:8px; height:8px; border-radius:2px; background:#8A929E; flex:0 0 auto;")}></span>
+        <span style={css("font-size:13px; color:#DDE1E7;")}><span style={css("font-weight:600; color:#9AA1AC;")}>Note.</span> {insiderBuys + insiderSells > 0
+          ? `${insiderBuys} buy / ${insiderSells} sell insider disclosure(s) classified from recent Oslo Børs Newsweb filings.`
+          : 'No recent Newsweb disclosures could be classified as buys or sells.'} Insider activity is shown for context only — it is not an input to the AI's factor model (momentum, trend, low-volatility, value &amp; quality).</span>
       </div>
 
       
@@ -2613,20 +2624,24 @@ export default function Terminal() {
           <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Growth of NOK 100 000</span>
           <div style={css("flex:1;")}></div>
           <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11.5px; color:#9AA1AC;")}>
-            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#3DBB84;")}></span>AI basket · {btOk ? fmtK(bm!.finalValue) : 'NOK 568k'}</span>
-            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#4E5661;")}></span>OSEBX · {btOk ? fmtK(bm!.benchFinal) : 'NOK 301k'}</span>
+            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#3DBB84;")}></span>AI basket · {btOk ? fmtK(bm!.finalValue) : '—'}</span>
+            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#4E5661;")}></span>OSEBX · {btOk ? fmtK(bm!.benchFinal) : '—'}</span>
           </div>
         </div>
+        {btChart ? (<>
         <svg viewBox="0 0 900 260" preserveAspectRatio="none" style={css("width:100%; height:250px; display:block;")}>
           <defs><linearGradient id="btgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3DBB84" stopOpacity="0.18"/><stop offset="100%" stopColor="#3DBB84" stopOpacity="0"/></linearGradient></defs>
           <line x1="0" y1="65" x2="900" y2="65" stroke="#20242B" strokeWidth="1"/>
           <line x1="0" y1="130" x2="900" y2="130" stroke="#20242B" strokeWidth="1"/>
           <line x1="0" y1="195" x2="900" y2="195" stroke="#20242B" strokeWidth="1"/>
-          <polyline points={btChart ? btChart.bLine : "0,230 90,214 180,218 270,200 360,194 450,176 540,180 630,168 720,158 810,138 900,120"} fill="none" stroke="#4E5661" strokeWidth="1.8"/>
-          <path d={btChart ? btChart.pArea : "M0,230 L90,210 L180,216 L270,186 L360,176 L450,150 L540,168 L630,140 L720,108 L810,82 L900,48 L900,260 L0,260 Z"} fill="url(#btgrad)"/>
-          <polyline points={btChart ? btChart.p : "0,230 90,210 180,216 270,186 360,176 450,150 540,168 630,140 720,108 810,82 900,48"} fill="none" stroke="#3DBB84" strokeWidth="2.4"/>
+          <polyline points={btChart.bLine} fill="none" stroke="#4E5661" strokeWidth="1.8"/>
+          <path d={btChart.pArea} fill="url(#btgrad)"/>
+          <polyline points={btChart.p} fill="none" stroke="#3DBB84" strokeWidth="2.4"/>
         </svg>
         <div className="mono" style={css("display:flex; justify-content:space-between; font-size:10px; color:#5B626C; margin-top:4px;")}><span>2016</span><span>2018</span><span>2020</span><span>2022</span><span>2024</span><span>2026</span></div>
+        </>) : (
+          <div style={css("height:250px; display:flex; align-items:center; justify-content:center; text-align:center;")}><div style={css("font-size:13px; color:#5B626C;")}>Running the 10-year backtest on real prices…</div></div>
+        )}
       </div>
 
       
@@ -2648,6 +2663,7 @@ export default function Terminal() {
       
       <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
         <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:14px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Annual returns vs OSEBX</span><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#5B626C;")}>strategy bar · benchmark in grey</span></div>
+        {btAnnual.length === 0 && (<div style={css("font-size:12.5px; color:#5B626C; padding:6px 0;")}>Loading real calendar-year returns…</div>)}
         {btAnnual.map((y, i) => (<React.Fragment key={i}>
           <div style={css("display:flex; align-items:center; gap:12px; margin-bottom:9px;")}>
             <span className="mono" style={css("width:52px; flex:0 0 auto; font-size:12px; color:#DDE1E7;")}>{y.year}</span>
