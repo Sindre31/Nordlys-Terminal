@@ -1,24 +1,13 @@
 // Company fundamentals for the featured report card, via Yahoo quoteSummary
 // (free cookie+crumb handshake, no key). Falls back to {} on error.
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
+import { getCrumb } from '../lib/yahooCrumb.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
-async function getCrumb() {
-  const r1 = await fetchWithTimeout('https://fc.yahoo.com', { headers: { 'User-Agent': UA } });
-  const setCookies =
-    typeof r1.headers.getSetCookie === 'function'
-      ? r1.headers.getSetCookie()
-      : [r1.headers.get('set-cookie')].filter(Boolean);
-  const cookie = setCookies.map((c) => String(c).split(';')[0]).join('; ');
-  const r2 = await fetchWithTimeout('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-    headers: { 'User-Agent': UA, Cookie: cookie },
-  });
-  return { cookie, crumb: (await r2.text()).trim() };
-}
-
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const symbol = String(req.query.symbol || 'DNB.OL').trim();
   let out = {};
   try {

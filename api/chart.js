@@ -1,10 +1,11 @@
 // Vercel serverless proxy for historical price series (free Yahoo Finance chart API).
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const symbol = String(req.query.symbol || '').trim();
   const range = String(req.query.range || '1mo');
   const interval = String(req.query.interval || (range === '1d' ? '5m' : '1d'));

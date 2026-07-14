@@ -3,7 +3,7 @@
 // volatility, max drawdown, 1-day VaR(95%), Sharpe and beta vs OSEBX.
 // Input: ?symbols=EQNR.OL:0.15,KOG.OL:0.12,...&rf=4.25
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 const BENCH = 'OSEBX.OL';
@@ -39,6 +39,7 @@ function stdev(a) {
 }
 
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const rf = parseFloat(String(req.query.rf || '4.25')) / 100;
   const pairs = String(req.query.symbols || '')
     .split(',')

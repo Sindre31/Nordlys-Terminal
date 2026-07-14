@@ -60,4 +60,42 @@ describe('fetchWithTimeout', () => {
     expect(opts.signal).toBeInstanceOf(AbortSignal);
     expect(opts.headers).toEqual({ 'X-Test': '1' });
   });
+
+  it('retries a 429 rate-limit response, then returns the eventual 200', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 429 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+    const r = await fetchWithTimeout('https://example.test', {}, { retries: 1, backoffMs: 0 });
+    expect(r.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a 503 server error, then returns the eventual 200', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+    const r = await fetchWithTimeout('https://example.test', {}, { retries: 1, backoffMs: 0 });
+    expect(r.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns the last retryable response (does not throw) after exhausting retries', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 429 });
+    vi.stubGlobal('fetch', fetchMock);
+    const r = await fetchWithTimeout('https://example.test', {}, { retries: 2, backoffMs: 0 });
+    expect(r.status).toBe(429);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry a 404 (non-retryable status)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 });
+    vi.stubGlobal('fetch', fetchMock);
+    const r = await fetchWithTimeout('https://example.test', {}, { retries: 2, backoffMs: 0 });
+    expect(r.status).toBe(404);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

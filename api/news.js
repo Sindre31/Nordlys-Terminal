@@ -4,7 +4,7 @@
 // DN / Finansavisen / Hegnar only expose paywalled (auth-gated) RSS, so they
 // can't be included from a free source.
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
@@ -72,6 +72,7 @@ async function fetchNewsweb() {
 }
 
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const q = String(req.query.q || '').trim().toLowerCase();
   const ticker = String(req.query.ticker || '').trim().toUpperCase();
 

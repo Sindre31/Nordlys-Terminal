@@ -1,7 +1,7 @@
 // Primary-insider trades from the official Oslo Børs Newsweb API (no key).
 // Category 1102 = "Managers' transaction" (meldepliktig handel for primærinnsidere).
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
@@ -13,6 +13,7 @@ function sideFromTitle(t) {
 }
 
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const limit = Math.min(parseInt(String(req.query.limit || '14'), 10) || 14, 40);
   const fromDate = new Date(Date.now() - 45 * 864e5).toISOString().slice(0, 10);
   try {

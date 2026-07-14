@@ -2,23 +2,10 @@
 // Uses the free cookie+crumb handshake (no API key). Falls back to {} on error
 // so the UI keeps its designed values.
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
+import { getCrumb } from '../lib/yahooCrumb.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
-
-async function getCrumb() {
-  const r1 = await fetchWithTimeout('https://fc.yahoo.com', { headers: { 'User-Agent': UA } });
-  const setCookies =
-    typeof r1.headers.getSetCookie === 'function'
-      ? r1.headers.getSetCookie()
-      : [r1.headers.get('set-cookie')].filter(Boolean);
-  const cookie = setCookies.map((c) => String(c).split(';')[0]).join('; ');
-  const r2 = await fetchWithTimeout('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-    headers: { 'User-Agent': UA, Cookie: cookie },
-  });
-  const crumb = (await r2.text()).trim();
-  return { cookie, crumb };
-}
 
 async function fetchSummary(sym, cookie, crumb) {
   const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,recommendationTrend,calendarEvents,defaultKeyStatistics&crumb=${encodeURIComponent(crumb)}`;
@@ -53,6 +40,7 @@ async function fetchSummary(sym, cookie, crumb) {
 }
 
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const symbols = String(req.query.symbols || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 40);
   const out = {};
   try {

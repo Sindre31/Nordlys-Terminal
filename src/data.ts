@@ -317,6 +317,46 @@ export function useChart(symbol: string | null, range: string): number[] {
   return closes;
 }
 
+// ---- Stock display row (live-or-"—") -----------------------------------------
+
+// Display shape for a stock row. `name`/`cur` are real static metadata; every market field is
+// a string that is either the live value or "—" (chg is null when there's no live quote). No
+// designed placeholder numbers.
+export interface StockDisplay {
+  name: string;
+  last: string;
+  chg: number | null;
+  open: string;
+  range: string;
+  vol: string;
+  cap: string;
+  cur?: string;
+}
+
+// Merges a live quote onto a base display record. With no quote the base is returned unchanged
+// (all "—"/null), so a missing quote can never render as a fabricated number.
+export function mergeQuote(base: StockDisplay, q: Quote | undefined): StockDisplay {
+  if (!q) return base;
+  return {
+    ...base,
+    last: fmtPrice(q.price),
+    chg: q.changePct,
+    open: q.open != null ? fmtPrice(q.open) : base.open,
+    range:
+      q.dayLow != null && q.dayHigh != null ? `${fmtPrice(q.dayLow)} – ${fmtPrice(q.dayHigh)}` : base.range,
+    vol: q.volume != null ? fmtVol(q.volume) : base.vol,
+    cur: q.currency || base.cur,
+  };
+}
+
+// Ranks symbols by live change %, highest first, dropping any without a live value (null/NaN) so
+// gainers/losers never include a fabricated change.
+export function rankByChange(items: { sym: string; chg: number | null }[]): { sym: string; chg: number }[] {
+  return items
+    .filter((x): x is { sym: string; chg: number } => x.chg != null && !Number.isNaN(x.chg))
+    .sort((a, b) => b.chg - a.chg);
+}
+
 // ---- Portfolio valuation -----------------------------------------------------
 
 export interface Position {

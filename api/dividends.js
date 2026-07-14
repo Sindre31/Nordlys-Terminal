@@ -1,7 +1,7 @@
 // Dividend history via the free Yahoo Finance chart events API (no key).
 // Returns the latest dividend and trailing-12-month total per symbol.
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
@@ -24,6 +24,7 @@ async function fetchDivs(sym) {
 }
 
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const symbols = String(req.query.symbols || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 40);
   const out = {};
   await Promise.all(

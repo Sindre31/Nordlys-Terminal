@@ -1,6 +1,6 @@
 // Official Norwegian macro data — Norges Bank open data API (no key required).
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
@@ -25,6 +25,7 @@ async function nbValue(seriesUrl) {
 }
 
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const out = { policyRate: null, cpi: null, bond10y: null };
   // Norges Bank key policy rate (official, CSV).
   try {

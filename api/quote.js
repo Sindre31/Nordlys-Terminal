@@ -1,7 +1,7 @@
 // Vercel serverless proxy for batch quotes via the free Yahoo Finance chart API.
 // No API key required. Runs server-side to avoid browser CORS.
 
-import { fetchWithTimeout } from '../lib/http.js';
+import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
@@ -35,6 +35,7 @@ async function fetchQuote(sym) {
 }
 
 export default async function handler(req, res) {
+  if (rejectNonGet(req, res)) return;
   const raw = String(req.query.symbols || '');
   const symbols = raw.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 40);
   const out = {};

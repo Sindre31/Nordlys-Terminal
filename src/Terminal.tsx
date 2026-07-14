@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ALL_SYMBOLS,
   STOCK_YAHOO,
@@ -20,13 +20,14 @@ import {
   fmtDayMon,
   computePortfolio,
   buildChartPath,
+  mergeQuote,
+  rankByChange,
   type Position,
+  type StockDisplay,
   fmtPrice,
   fmtFx,
   fmtNum,
-  fmtVol,
   fmtTime,
-  type Quote,
   type QuoteMap,
 } from './data';
 import { useQuantModel, RISK_OPTIONS, type FactorZ } from './quant/useQuantModel';
@@ -48,25 +49,12 @@ import {
   type AlertRule,
   type TriggeredAlert,
 } from './storage';
+import { css, chgEl } from './ui';
 
 // The AI portfolio's inception is today — every holding's "held since" reads as today
 // until a real rebalance changes it, rather than a fabricated pre-dated history.
 function todayLabel(): string {
   return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function css(str: string): React.CSSProperties {
-  const obj: Record<string, string> = {};
-  str.split(';').forEach((decl) => {
-    const idx = decl.indexOf(':');
-    if (idx === -1) return;
-    const prop = decl.slice(0, idx).trim();
-    const val = decl.slice(idx + 1).trim();
-    if (!prop || !val) return;
-    const camel = prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-    obj[camel] = val;
-  });
-  return obj as React.CSSProperties;
 }
 
 function deltaBadge(v: number | null | undefined) {
@@ -140,111 +128,7 @@ function stocks() {
     FRO: mk('Frontline'),
     ORK: mk('Orkla'),
     STB: mk('Storebrand'),
-  } as Record<string, { name: string; last: string; chg: number | null; open: string; range: string; vol: string; cap: string; cur?: string }>;
-}
-
-function thesis() {
-  return {
-    EQNR: {
-      reco: 'HOLD', size: '15.0%', target: '340 NOK', upside: 8.8, since: todayLabel(),
-      role: 'Core energy anchor and the portfolio’s largest single position.',
-      text: 'Equinor is held as the primary expression of the AI’s risk-premium tilt to oil. A Middle-East shipping-risk premium plus resilient European gas prices support cash flow, while the raised dividend and fresh buyback shrink the share count. Valuation stays undemanding at ~8x earnings, giving downside cushion if the geopolitical bid fades.',
-      drivers: [
-        { text: 'Tanker reroutes near the Strait of Hormuz add a crude supply premium', sent: 'Bullish', meta: 'Conflict · Bloomberg · 12:20' },
-        { text: 'Q2 cash flow beat; dividend raised and $1.2bn buyback launched', sent: 'Bullish', meta: 'Earnings · Reuters · 14:21' },
-        { text: 'Trump “drill, baby, drill” rhetoric a medium-term supply risk', sent: 'Watch', meta: 'US Politics · Reuters · 08:55' },
-      ],
-      risks: ['A ceasefire that removes the crude risk premium', 'Faster-than-expected US supply growth capping prices'],
-    },
-    KOG: {
-      reco: 'BUY', size: '12.0%', target: '1 240 NOK', upside: 14.4, since: todayLabel(),
-      role: 'Highest-conviction defence position; structural, multi-year theme.',
-      text: 'Kongsberg is the AI’s cleanest Nordnet-listed play on European rearmament. Summit pledges to lift defence budgets translate into a visible, growing order book — a durable re-rating rather than a headline pop. Position was increased +2.0% at the latest rebalance.',
-      drivers: [
-        { text: 'European members pledged higher defence budgets at summit', sent: 'Bullish', meta: 'Defence · AP · 11:05' },
-        { text: 'NOK 4.3bn NATO-partner contract win', sent: 'Bullish', meta: 'Orders · Reuters · yesterday' },
-      ],
-      risks: ['A broad peace deal that slows the rearmament cycle', 'Execution/delivery delays on a fast-growing order book'],
-    },
-    AKRBP: {
-      reco: 'BUY', size: '8.0%', target: '285 NOK', upside: 10.1, since: todayLabel(),
-      role: 'High-beta satellite to the core energy sleeve.',
-      text: 'Aker BP amplifies the energy tilt with higher operational leverage to the crude price than Equinor. Added +1.5% on the shipping-disruption supply premium; sized to be trimmed quickly if tensions ease.',
-      drivers: [
-        { text: 'Crude supply premium from Mideast shipping risk', sent: 'Bullish', meta: 'Conflict · Bloomberg · 12:20' },
-        { text: '2026 production guidance raised after Yggdrasil ramp-up', sent: 'Bullish', meta: 'Guidance · E24 · 10:44' },
-      ],
-      risks: ['High beta cuts both ways if oil rolls over', 'Single-basin concentration in the North Sea'],
-    },
-    NHY: {
-      reco: 'HOLD', size: '10.0%', target: '72 NOK', upside: 4.5, since: todayLabel(),
-      role: 'Materials exposure; flagged for review on policy risk.',
-      text: 'Norsk Hydro benefits from stronger European aluminium demand and raised output guidance, but a Trump proposal for a 25% tariff on European aluminium is a binary policy overhang. The AI holds rather than adds, and has flagged the name pending a concrete decision.',
-      drivers: [
-        { text: 'Aluminium output guidance raised on European demand', sent: 'Bullish', meta: 'Guidance · E24 · 13:58' },
-        { text: 'Trump floats 25% tariff on European aluminium imports', sent: 'Watch', meta: 'US Politics · Reuters · 13:52' },
-      ],
-      risks: ['Tariff decision goes against European exporters', 'Aluminium price sensitive to a China demand slowdown'],
-    },
-    YAR: {
-      reco: 'HOLD', size: '6.0%', target: '360 NOK', upside: 5.3, since: todayLabel(),
-      role: 'Grain-disruption hedge within materials.',
-      text: 'Yara is held as a hedge on conflict-driven grain and fertilizer disruption. Modest sizing reflects offsetting pressure from softer gas input costs and a mixed pricing outlook.',
-      drivers: [{ text: 'Conflict-driven grain-supply disruption supports fertilizer demand', sent: 'Bullish', meta: 'Conflict · AFP · 10:18' }],
-      risks: ['A peace agreement easing grain-supply fears', 'Natural-gas input-cost swings compressing margins'],
-    },
-    MOWI: {
-      reco: 'TRIM', size: '9.0%', target: '188 NOK', upside: -3.2, since: todayLabel(),
-      role: 'Seafood diversifier being reduced on price weakness.',
-      text: 'Mowi is a diversifier the AI is actively trimming. Salmon spot prices have fallen for three straight weeks, pressuring Q3 margins. Reduced −1.0% rather than exited to retain some seafood exposure while the price trend confirms.',
-      drivers: [
-        { text: 'Salmon spot prices fall for a third straight week', sent: 'Bearish', meta: 'Sector · DN · 13:40' },
-        { text: 'Exporters warn of margin squeeze into Q3', sent: 'Bearish', meta: 'Sector · DN · today' },
-      ],
-      risks: ['Continued spot-price weakness into Q3', 'Biological/regulatory cost inflation'],
-    },
-    LMT: {
-      reco: 'BUY', size: '9.0%', target: '$560', upside: 9.3, since: todayLabel(),
-      role: 'US defence exposure — booked outside ASK.',
-      text: 'Lockheed Martin extends the defence theme into the US market, the most direct beneficiary of a rising US defence budget. As a non-EEA holding it sits on the Nordnet investeringskonto, outside the aksjesparekonto.',
-      drivers: [{ text: 'US defence budget upcycle and allied procurement', sent: 'Bullish', meta: 'Defence · AP · 11:05' }],
-      risks: ['US budget/appropriations gridlock', 'FX: USD/NOK swings affect NOK returns'],
-    },
-    XOM: {
-      reco: 'HOLD', size: '8.0%', target: '$128', upside: 8.3, since: todayLabel(),
-      role: 'US energy exposure — booked outside ASK.',
-      text: 'Exxon Mobil diversifies the energy sleeve into US supermajors, carrying the same crude supply-premium logic with a large, integrated cash-return profile. Non-EEA, so held outside ASK.',
-      drivers: [{ text: 'Crude supply premium from geopolitical risk', sent: 'Bullish', meta: 'Conflict · Bloomberg · 12:20' }],
-      risks: ['US supply growth capping oil prices', 'FX: USD/NOK translation risk'],
-    },
-    NVDA: {
-      reco: 'HOLD', size: '6.0%', target: '$190', upside: 10.3, since: todayLabel(),
-      role: 'Growth/tech ballast — booked outside ASK.',
-      text: 'NVIDIA provides growth ballast uncorrelated to the geopolitical trades, riding the AI-capex cycle with support from an expected rate-cut path. Kept modest given elevated volatility; non-EEA, held outside ASK.',
-      drivers: [
-        { text: 'Norges Bank / Fed rate-cut path supports long-duration growth', sent: 'Bullish', meta: 'Rates · macro · 09:30' },
-        { text: 'Sustained AI data-centre capex', sent: 'Bullish', meta: 'Sector · CNBC · today' },
-      ],
-      risks: ['High valuation and realised volatility', 'AI-capex digestion / demand air-pocket'],
-    },
-    GLOBAL: {
-      reco: 'HOLD', size: '11.0%', target: '—', upside: 0, since: todayLabel(),
-      role: 'Diversified global-equity base layer.',
-      text: 'The Nordnet global index fund is the portfolio’s low-cost base layer, capturing broad market beta and a trade-de-escalation tailwind while keeping single-stock concentration in check.',
-      drivers: [{ text: 'Signs of US–China tariff de-escalation lift global risk appetite', sent: 'Bullish', meta: 'Trade · CNBC · 09:40' }],
-      risks: ['Global growth disappointment', 'Broad de-risking event'],
-    },
-    DNBTEK: {
-      reco: 'HOLD', size: '5.0%', target: '—', upside: 0, since: todayLabel(),
-      role: 'Actively-managed tech sleeve.',
-      text: 'DNB Teknologi adds an actively-managed technology tilt that benefits from the expected rate-cut tailwind, complementing the passive global fund.',
-      drivers: [{ text: 'Rate-cut expectations support tech multiples', sent: 'Bullish', meta: 'Rates · macro · 09:30' }],
-      risks: ['Rate path surprises to the upside', 'Concentration in a few large tech names'],
-    },
-  } as Record<
-    string,
-    { reco: string; size: string; target: string; upside: number; since: string; role: string; text: string; drivers: { text: string; sent: string; meta: string }[]; risks: string[] }
-  >;
+  } as Record<string, StockDisplay>;
 }
 
 function spark(up: boolean) {
@@ -254,25 +138,6 @@ function spark(up: boolean) {
     'svg',
     { viewBox: '0 0 80 22', style: { width: 80, height: 22 } },
     React.createElement('polyline', { points: pts, fill: 'none', stroke: color, strokeWidth: 1.6 }),
-  );
-}
-
-function chgEl(chg: number | null, size?: number) {
-  if (chg == null) {
-    // No live quote yet → honest dash, never a fabricated 0.00% or designed number.
-    return React.createElement('span', { className: 'mono', style: { color: '#8A929E', fontSize: size || 12 } }, '—');
-  }
-  const up = chg >= 0;
-  // A directional arrow + explicit sign so the up/down meaning survives without colour — for
-  // colour-blind users and for grayscale screenshots where red/green are indistinguishable.
-  return React.createElement(
-    'span',
-    {
-      className: 'mono',
-      'aria-label': `${up ? 'up' : 'down'} ${Math.abs(chg).toFixed(2)} percent`,
-      style: { color: up ? '#3DBB84' : '#E4655E', fontSize: size || 12 },
-    },
-    `${up ? '▲' : '▼'} ${(up ? '+' : '') + chg.toFixed(2)}%`,
   );
 }
 
@@ -396,8 +261,10 @@ export default function Terminal() {
   const [watchTickers, setWatchTickers] = useState<string[]>(() => loadValidArray('nordlys_watchlist', (v): v is string => typeof v === 'string'));
   const [editWatch, setEditWatch] = useState(false);
   const [searchInput, setSearchInput] = useState('');
+  const [searchMiss, setSearchMiss] = useState(false);
   const [idxRange, setIdxRange] = useState('1mo'); // OSEBX overview chart timeframe
   const [detailRange, setDetailRange] = useState('1mo'); // stock-detail chart timeframe
+  const stockPanelRef = useRef<HTMLDivElement>(null);
   const [alertRules, setAlertRules] = useState<AlertRule[]>(() => loadValidArray('nordlys_alert_rules', isAlertRule));
   const [triggeredToday, setTriggeredToday] = useState<TriggeredAlert[]>(() => loadValidArray('nordlys_alert_triggers', isTriggeredAlert));
   const [newAlertSym, setNewAlertSym] = useState('EQNR');
@@ -450,6 +317,9 @@ export default function Terminal() {
     if (hit) {
       setStock(hit);
       setSearchInput('');
+      setSearchMiss(false);
+    } else {
+      setSearchMiss(true);
     }
   };
 
@@ -474,28 +344,12 @@ export default function Terminal() {
   const detailCloses = useChart(stock ? STOCK_YAHOO[stock] || stock : null, detailRange);
   const quantModel = useQuantModel(risk);
 
-  // Merge live quotes over the static base, preserving the shape the UI uses.
+  // Merge live quotes over the static base via the pure, unit-tested mergeQuote (data.ts).
   const base = stocks();
-  const S: ReturnType<typeof stocks> = {};
+  const S: Record<string, StockDisplay> = {};
   for (const k of Object.keys(base)) {
     const y = STOCK_YAHOO[k];
-    const q: Quote | undefined = y ? live[y] : undefined;
-    if (q) {
-      S[k] = {
-        ...base[k],
-        last: fmtPrice(q.price),
-        chg: q.changePct,
-        open: q.open != null ? fmtPrice(q.open) : base[k].open,
-        range:
-          q.dayLow != null && q.dayHigh != null
-            ? `${fmtPrice(q.dayLow)} – ${fmtPrice(q.dayHigh)}`
-            : base[k].range,
-        vol: q.volume != null ? fmtVol(q.volume) : base[k].vol,
-        cur: q.currency || base[k].cur,
-      };
-    } else {
-      S[k] = base[k];
-    }
+    S[k] = mergeQuote(base[k], y ? live[y] : undefined);
   }
   // Live change % for a ticker (used by holdings tables), else the static value.
   const liveChg = (sym: string, fallback: number): number => {
@@ -537,6 +391,23 @@ export default function Terminal() {
     setNewAlertPrice('');
   };
   const removeAlertRule = (id: number) => setAlertRules((prev) => prev.filter((r) => r.id !== id));
+
+  // Stock-detail overlay keyboard accessibility: close on Escape, move focus into the panel when
+  // it opens, and restore focus to whatever was focused before (usually the row that opened it)
+  // when it closes — standard modal behaviour so keyboard users aren't stranded.
+  useEffect(() => {
+    if (!stock) return;
+    const prevFocus = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setStock(null);
+    };
+    document.addEventListener('keydown', onKey);
+    stockPanelRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      prevFocus?.focus?.();
+    };
+  }, [stock]);
 
   // Checks each active rule against the latest live price/change and logs a (de-duplicated,
   // once-per-day-per-rule) trigger — real detection rather than fabricated trigger events.
@@ -1071,9 +942,6 @@ export default function Terminal() {
     URL.revokeObjectURL(url);
   };
 
-  const th = thesis()[stock as string];
-  const sDrivers = th ? th.drivers.map((d) => ({ ...d, sentEl: sentBadge(d.sent) })) : [];
-
   // Conviction display values come from the real engine above; the stance
   // supplies the cash target, label and narrative note.
   const rc = {
@@ -1224,10 +1092,7 @@ export default function Terminal() {
   const osebx = live['OSEBX.OL'];
 
   // Only names with a live quote can be ranked — no fabricated change values padding the list.
-  const ranked = order
-    .map((sym) => ({ sym, chg: liveChg(sym, NaN) }))
-    .filter((x) => !Number.isNaN(x.chg))
-    .sort((a, b) => b.chg - a.chg);
+  const ranked = rankByChange(order.map((sym) => ({ sym, chg: liveChg(sym, NaN) })));
   const gainers = ranked.slice(0, 4);
   const losers = ranked.slice(-4).reverse();
 
@@ -1585,9 +1450,6 @@ export default function Terminal() {
   const closeStock = () => setStock(null);
   const sSym = stock || 'EQNR', sName = cur.name, sLast = cur.last, sOpen = cur.open, sRange = cur.range, sVol = cur.vol, sCap = cur.cap;
   const sCur = cur.cur || 'NOK', sChgEl = chgEl(cur.chg, 14);
-  const sHasThesis = !!th;
-  const sThesis = th ? th.text : '', sRole = th ? th.role : '';
-  const sRisks = th ? th.risks : [];
   // Stat tiles come from real data, not the static thesis: analyst consensus target (Yahoo),
   // upside vs the live price, the model's own current signal, and — if the name is actually held —
   // its live allocation and the ledger inception date. Everything falls back to "—" when absent,
@@ -1602,8 +1464,12 @@ export default function Terminal() {
   const sHeld = POSITIONS.some((p) => p.ticker === sSym);
   const sSize = sHeld ? port.allocOf(sSym).toFixed(1) + '%' : 'Not held';
   const sSince = sHeld && ledger ? ledger.inceptionDate : '—';
-  const sModelAct = quantModel.signals.find((s) => s.ticker === sSym)?.act ?? 'HOLD';
+  const sSig = quantModel.signals.find((s) => s.ticker === sSym);
+  const sModelAct = sSig?.act ?? 'HOLD';
   const sRecoEl = actBadge(sModelAct);
+  const sTracked = !!sYh; // a name the factor model covers → show the model-view panel
+  const sFactorZ = sSig?.factorZ ?? EMPTY_FZ;
+  const sReason = sSig?.reason ?? null;
 
   const qmReady = quantModel.ready && !!quantModel.backtest;
   const qmMetrics = quantModel.backtest?.metrics;
@@ -1623,7 +1489,8 @@ export default function Terminal() {
 
 <div className="app-root" style={css("height:100vh; display:flex; flex-direction:column; background:#14171B; color:#D5D9E0;")}>
 
-  
+  <a href="#main-content" className="skip-link" style={css("position:absolute; left:8px; top:-40px; z-index:100; background:#2D5BD0; color:#fff; padding:8px 14px; border-radius:0 0 8px 8px; font-size:13px; text-decoration:none;")}>Skip to content</a>
+
   <div className="topbar" style={css("display:flex; align-items:center; gap:20px; padding:0 18px; height:48px; background:#0E1013; border-bottom:1px solid #23272E; flex:0 0 auto;")}>
     <div style={css("display:flex; align-items:center; gap:9px;")}>
       <div style={css("width:16px; height:16px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #6FA8FF, #2D5BD0);")}></div>
@@ -1643,17 +1510,18 @@ export default function Terminal() {
       <span {...clickable(goBt)} aria-current={tab === 'bt' ? 'page' : undefined} style={css(navBt)}>Backtest</span>
     </nav>
     <div style={css("flex:1;")}></div>
-    <div className="hide-sm" style={css("display:flex; align-items:center; gap:8px; background:#191D24; border:1px solid #23272E; border-radius:7px; padding:6px 11px; width:220px; font-size:12.5px;")}>
-      <span className="mono" style={css("color:#5B626C;")}>⌕</span>
+    <div className="hide-sm" style={css(`display:flex; align-items:center; gap:8px; background:#191D24; border:1px solid ${searchMiss ? '#5C2A2A' : '#23272E'}; border-radius:7px; padding:6px 11px; width:220px; font-size:12.5px; position:relative;`)}>
+      <span className="mono" style={css(`color:${searchMiss ? '#E4938E' : '#5B626C'};`)}>⌕</span>
       <input
         value={searchInput}
-        onChange={(e) => setSearchInput(e.target.value)}
+        onChange={(e) => { setSearchInput(e.target.value); if (searchMiss) setSearchMiss(false); }}
         onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
         placeholder="Search symbol…"
         aria-label="Search symbol"
         className="mono"
         style={css("flex:1; min-width:0; background:transparent; border:none; outline:none; color:#EDEFF2; font-size:12.5px; font-family:inherit;")}
       />
+      {searchMiss && <span role="status" style={css("position:absolute; top:100%; left:0; margin-top:4px; font-size:10.5px; color:#E4938E; background:#191D24; border:1px solid #23272E; border-radius:6px; padding:4px 8px; white-space:nowrap;")}>No match for “{searchInput.trim()}”</span>}
     </div>
     {(() => {
       const { status, newest } = pipelineStatus(dataHealth);
@@ -1696,7 +1564,7 @@ export default function Terminal() {
   </div>
 
   
-  <div className="screen-area" style={css("flex:1; position:relative; min-height:0;")}>
+  <main id="main-content" className="screen-area" style={css("flex:1; position:relative; min-height:0;")}>
 
     
     {isMarkets && (<>
@@ -1773,7 +1641,7 @@ export default function Terminal() {
           <div style={css("border-right:1px solid #23272E; padding:11px 16px;")}>
             <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#3DBB84; font-weight:600;")}>▲ Top gainers</span>
             <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
-              {gainers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>Add symbols to your watchlist</div>}
+              {gainers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>{order.length === 0 ? 'Add symbols to your watchlist' : 'Loading live prices…'}</div>}
               {gainers.map((g, i) => (
                 <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
               ))}
@@ -1782,7 +1650,7 @@ export default function Terminal() {
           <div style={css("padding:11px 16px;")}>
             <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#E4655E; font-weight:600;")}>▼ Top losers</span>
             <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
-              {losers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>Add symbols to your watchlist</div>}
+              {losers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>{order.length === 0 ? 'Add symbols to your watchlist' : 'Loading live prices…'}</div>}
               {losers.map((g, i) => (
                 <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
               ))}
@@ -1798,6 +1666,9 @@ export default function Terminal() {
           <span className="mono" style={css("font-size:11px; color:#5B626C;")}>Live</span>
         </div>
         <div style={css("overflow-y:auto; flex:1;")}>
+          {feedItems.length === 0 && (
+            <div style={css("padding:14px; font-size:11.5px; color:#5B626C; line-height:1.5;")}>Awaiting the live newswire (E24 · Oslo Børs)…</div>
+          )}
           {feedItems.slice(0, 6).map((n, i) => (
             <a key={i} href={n.link || undefined} target="_blank" rel="noreferrer" style={css("display:block; padding:11px 14px; border-bottom:1px solid #191D23; text-decoration:none;")}>
               <div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>{n.ticker}</span><span>{n.time}</span><span style={css("color:#8A929E;")}>{n.source}</span></div>
@@ -1878,7 +1749,7 @@ export default function Terminal() {
               <div style={css("padding:34px 20px; text-align:center;")}><div className="mono" style={css("font-size:12.5px; color:#8A929E;")}>Awaiting the live newswire…</div><div style={css("font-size:11.5px; color:#5B626C; margin-top:6px; line-height:1.5;")}>Headlines from E24 &amp; Oslo Børs load here as they publish — no placeholder stories.</div></div>
             ) : (<>
               {feedItems[0]?.image ? (
-                <img src={feedItems[0].image} alt="" style={css("width:100%; height:170px; object-fit:cover; display:block;")} />
+                <img src={feedItems[0].image} alt={feedItems[0].title || 'News illustration'} style={css("width:100%; height:170px; object-fit:cover; display:block;")} />
               ) : (
                 <div style={css("height:170px; background:repeating-linear-gradient(135deg,#171B21,#171B21 11px,#1B2027 11px,#1B2027 22px); display:flex; align-items:flex-end; padding:16px;")}></div>
               )}
@@ -1892,7 +1763,7 @@ export default function Terminal() {
             {feedItems.slice(1, 8).map((n, i) => (<React.Fragment key={i}>
               <a href={n.link || undefined} target="_blank" rel="noreferrer" style={css("display:flex; gap:14px; padding:14px 18px; border-bottom:1px solid #191D23; cursor:pointer; text-decoration:none;")} className="hov-b">
                 {n.image ? (
-                  <img src={n.image} alt="" style={css("width:64px; height:52px; border-radius:7px; object-fit:cover; flex:0 0 auto;")} />
+                  <img src={n.image} alt={n.title || 'News illustration'} style={css("width:64px; height:52px; border-radius:7px; object-fit:cover; flex:0 0 auto;")} />
                 ) : (
                   <div style={css("width:64px; height:52px; border-radius:7px; background:repeating-linear-gradient(135deg,#171B21,#171B21 7px,#1B2027 7px,#1B2027 14px); flex:0 0 auto;")}></div>
                 )}
@@ -1919,9 +1790,9 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
             <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Macro watch</span>
             <div className="mono" style={css("margin-top:12px; font-size:12.5px;")}>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>Norges Bank rate</span><span style={css("color:#F2F4F7;")}>{macro.policyRate != null ? macro.policyRate.toFixed(2) + '%' : '4.25%'}</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>CPI (YoY)</span><span style={css("color:#F2F4F7;")}>{macro.cpi != null ? macro.cpi.toFixed(1) + '%' : '3.1%'}</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0;")}><span style={css("color:#DDE1E7;")}>10y NOK gov bond</span><span style={css("color:#F2F4F7;")}>{macro.bond10y != null ? macro.bond10y.toFixed(2) + '%' : '3.62%'}</span></div>
+              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>Norges Bank rate</span><span style={css("color:#F2F4F7;")}>{macro.policyRate != null ? macro.policyRate.toFixed(2) + '%' : '—'}</span></div>
+              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>CPI (YoY)</span><span style={css("color:#F2F4F7;")}>{macro.cpi != null ? macro.cpi.toFixed(1) + '%' : '—'}</span></div>
+              <div style={css("display:flex; justify-content:space-between; padding:7px 0;")}><span style={css("color:#DDE1E7;")}>10y NOK gov bond</span><span style={css("color:#F2F4F7;")}>{macro.bond10y != null ? macro.bond10y.toFixed(2) + '%' : '—'}</span></div>
             </div>
           </div>
         </div>
@@ -2794,7 +2665,7 @@ export default function Terminal() {
     </div>
     </>)}
 
-  </div>
+  </main>
 
   <div className="app-footer" style={css("flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:6px 18px; background:#0E1013; border-top:1px solid #23272E; font-size:10.5px; color:#5B626C; line-height:1.4;")}>
     <span style={css("color:#7C8492;")}>Illustrative — not investment advice.</span>
@@ -2806,7 +2677,7 @@ export default function Terminal() {
 
   {hasStock && (<>
   <div className="stock-overlay" style={css("position:absolute; inset:0; background:rgba(6,8,11,0.55); z-index:40;")} onClick={closeStock}></div>
-  <div data-screen-label="Stock detail" className="stock-panel" style={css("position:absolute; top:0; right:0; bottom:0; width:720px; background:#101317; border-left:1px solid #23272E; z-index:41; overflow-y:auto; box-shadow:-30px 0 60px rgba(0,0,0,0.4);")}>
+  <div ref={stockPanelRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={`${sName} details`} data-screen-label="Stock detail" className="stock-panel" style={css("position:absolute; top:0; right:0; bottom:0; width:720px; background:#101317; border-left:1px solid #23272E; z-index:41; overflow-y:auto; box-shadow:-30px 0 60px rgba(0,0,0,0.4); outline:none;")}>
     <div style={css("padding:20px 26px; border-bottom:1px solid #23272E; display:flex; align-items:flex-start; gap:14px;")}>
       <div>
         <div style={css("display:flex; align-items:center; gap:10px;")}>
@@ -2848,11 +2719,11 @@ export default function Terminal() {
         <div style={css("padding:12px 14px;")}><div style={css("font-size:11px; color:#7C8492;")}>Mkt cap</div><div style={css("font-size:15px; color:#F2F4F7; margin-top:3px;")}>{sCap}</div></div>
       </div>
     </div>
-    {sHasThesis && (<>
+    {sTracked && (<>
     <div style={css("margin:16px 26px 0; border:1px solid #3B2F63; border-radius:12px; background:#120E22; overflow:hidden;")}>
       <div style={css("display:flex; align-items:center; gap:10px; padding:13px 18px; border-bottom:1px solid #221B38;")}>
-        <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#B79BFF; font-weight:600;")}>Thesis &amp; context</span>
-        <span className="mono" style={css("font-size:10px; color:#7C8492;")}>model signal:</span>
+        <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#B79BFF; font-weight:600;")}>Model view</span>
+        <span className="mono" style={css("font-size:10px; color:#7C8492;")}>factor-model signal:</span>
         <span style={css("margin-left:auto;")}>{sRecoEl}</span>
       </div>
       <div style={css("padding:16px 18px;")}>
@@ -2864,28 +2735,10 @@ export default function Terminal() {
         </div>
         <div className="mono" style={css("font-size:9.5px; color:#5B626C; margin-top:6px;")}>Target = Yahoo analyst consensus · upside vs live price · allocation &amp; held-since from the live ledger.</div>
 
-        <p style={css("font-size:13px; line-height:1.6; color:#DDE1E7; margin:16px 0 0;")}>{sThesis}</p>
-        <div style={css("margin-top:10px;")}><span style={css("font-size:11px; color:#7C8492;")}>Role in portfolio · </span><span style={css("font-size:12.5px; color:#DDE1E7;")}>{sRole}</span></div>
-        <div style={css("margin-top:10px; padding:8px 11px; border-radius:8px; background:#1A1330; border:1px solid #2A2145;")}><span style={css("font-size:10.5px; color:#9A8FC0; line-height:1.5;")}>Illustrative editorial context — static, not live-sourced reporting, and may not match the live model signal or holdings shown above.</span></div>
-
         <div style={css("margin-top:16px;")}>
-          <div style={css("font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:9px;")}>Illustrative drivers</div>
-          {sDrivers.map((d, i) => (<React.Fragment key={i}>
-            <div style={css("display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid #1E1834;")}>
-              <span style={css("flex:0 0 auto; margin-top:1px;")}>{d.sentEl}</span>
-              <div style={css("min-width:0;")}><div style={css("font-size:12.5px; color:#DDE1E7; line-height:1.45;")}>{d.text}</div></div>
-            </div>
-          </React.Fragment>))}
-        </div>
-
-        <div style={css("margin-top:16px;")}>
-          <div style={css("font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:9px;")}>Key risks</div>
-          {sRisks.map((rk, i) => (<React.Fragment key={i}>
-            <div style={css("display:flex; gap:9px; align-items:flex-start; padding:6px 0;")}>
-              <span style={css("color:#E4655E; font-size:12px; margin-top:1px; flex:0 0 auto;")}>▲</span>
-              <span style={css("font-size:12.5px; color:#C7BFD6; line-height:1.45;")}>{rk}</span>
-            </div>
-          </React.Fragment>))}
+          <div style={css("font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:7px;")}>Factor scores driving the signal</div>
+          {factorChips(sFactorZ)}
+          {sReason && <div style={css("font-size:11.5px; color:#9AA1AC; line-height:1.5; margin-top:9px;")}>{sReason}</div>}
         </div>
       </div>
     </div>

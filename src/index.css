@@ -193,3 +193,8 @@ button:disabled {
     width: 100% !important;
   }
 }
+
+/* Skip-to-content link: off-screen until keyboard-focused, then visible at top-left. */
+.skip-link:focus {
+  top: 0 !important;
+}
