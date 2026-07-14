@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react';
 import { STOCK_YAHOO } from '../data';
 import { alignSeries, type RawSeries } from './align';
-import { runBacktest, type BacktestResult } from './backtest';
+import { runBacktest, type BacktestResult, type BacktestOptions } from './backtest';
 
 const BENCHMARK_SYMBOL = 'OSEBX.OL';
 const REFRESH_MS = 15 * 60_000;
+
+export type RiskLevel = 'conservative' | 'balanced' | 'aggressive';
+
+// Conservative: pickier bar, only 4 names max -> more often sits in cash.
+// Aggressive: looser bar, up to 6 names -> more fully invested/diversified.
+export const RISK_OPTIONS: Record<RiskLevel, BacktestOptions> = {
+  conservative: { topN: 4, scoreThreshold: 1.0 },
+  balanced: { topN: 5, scoreThreshold: 0 },
+  aggressive: { topN: 6, scoreThreshold: -0.5 },
+};
 
 const NAMES: Record<string, string> = {
   EQNR: 'Equinor', DNB: 'DNB Bank', TEL: 'Telenor', NHY: 'Norsk Hydro', MOWI: 'Mowi',
@@ -36,6 +46,7 @@ export interface Conviction {
 
 export interface QuantModel {
   ready: boolean;
+  error: string | null;
   backtest: BacktestResult | null;
   signals: QuantSignalRow[];
   conviction: Conviction | null;
@@ -67,10 +78,9 @@ interface SummaryInfo {
 
 const CONVICTION_BASE = 30;
 const FACTOR_SCALE = 12;
-const BUY_THRESHOLD = 0.5;
 
-function buildConviction(backtest: BacktestResult, tickers: string[]): Conviction {
-  const selected = tickers.filter((t) => (backtest.latestScores[t]?.composite ?? -Infinity) > BUY_THRESHOLD);
+function buildConviction(backtest: BacktestResult, tickers: string[], buyThreshold: number): Conviction {
+  const selected = tickers.filter((t) => (backtest.latestScores[t]?.composite ?? -Infinity) > buyThreshold);
   const pool = selected.length > 0 ? selected : tickers;
 
   const avg = (sel: (t: string) => number | null) => {
@@ -104,11 +114,16 @@ function buildConviction(backtest: BacktestResult, tickers: string[]): Convictio
 // portfolio's current-weights backtest above: this one dynamically picks among the
 // 12 tracked names each month rather than holding fixed weights. See backtest.ts for
 // the methodology and its caveats (small universe, short history, no OOS validation).
-export function useQuantModel(): QuantModel {
-  const [state, setState] = useState<QuantModel>({ ready: false, backtest: null, signals: [], conviction: null });
+// The risk-level toggle changes how many names it holds and how strict the quality bar
+// is (conservative = pickier + more cash-like, aggressive = looser + more diversified),
+// matching the existing risk-level cash%/tilt copy elsewhere in the app.
+export function useQuantModel(riskLevel: RiskLevel = 'balanced'): QuantModel {
+  const [state, setState] = useState<QuantModel>({ ready: false, error: null, backtest: null, signals: [], conviction: null });
 
   useEffect(() => {
     let cancelled = false;
+    const opts = RISK_OPTIONS[riskLevel];
+    const buyThreshold = opts.scoreThreshold ?? 0;
 
     async function load() {
       const tickers = Object.keys(STOCK_YAHOO);
@@ -123,7 +138,10 @@ export function useQuantModel(): QuantModel {
         for (const [t, data] of chartEntries) raw[t] = data;
 
         const { weekKeys, series } = alignSeries(raw);
-        const backtest = runBacktest(weekKeys, series, tickers, BENCHMARK_SYMBOL);
+        if (weekKeys.length === 0 || Object.values(series).every((s) => s.every((v) => v == null))) {
+          throw new Error('No price history returned — Yahoo Finance may be unreachable right now');
+        }
+        const backtest = runBacktest(weekKeys, series, tickers, BENCHMARK_SYMBOL, opts);
 
         const yahooSymbols = tickers.map((t) => STOCK_YAHOO[t]).join(',');
         const summaryResp = (await getJSON(`/api/summary?symbols=${encodeURIComponent(yahooSymbols)}`)) as
@@ -135,7 +153,8 @@ export function useQuantModel(): QuantModel {
         const signals: QuantSignalRow[] = tickers.map((t) => {
           const snap = backtest.latestScores[t];
           const composite = snap?.composite ?? null;
-          const act: QuantSignalRow['act'] = composite == null ? 'HOLD' : composite > 0.5 ? 'BUY' : composite < -0.5 ? 'SELL' : 'HOLD';
+          const act: QuantSignalRow['act'] =
+            composite == null ? 'HOLD' : composite > buyThreshold ? 'BUY' : composite < -buyThreshold ? 'SELL' : 'HOLD';
 
           const target = summary[STOCK_YAHOO[t]]?.targetMean ?? null;
           const lastClose = series[t][series[t].length - 1];
@@ -150,10 +169,12 @@ export function useQuantModel(): QuantModel {
           return { ticker: t, name: NAMES[t] ?? t, act, target, upsidePct, reason };
         });
 
-        const conviction = buildConviction(backtest, tickers);
-        setState({ ready: true, backtest, signals, conviction });
-      } catch {
-        // keep previous state (or stay not-ready) on failure
+        const conviction = buildConviction(backtest, tickers, buyThreshold);
+        setState({ ready: true, error: null, backtest, signals, conviction });
+      } catch (err) {
+        if (!cancelled) {
+          setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : 'Failed to load the factor model' }));
+        }
       }
     }
 
@@ -163,7 +184,7 @@ export function useQuantModel(): QuantModel {
       cancelled = true;
       clearInterval(id);
     };
-  }, []);
+  }, [riskLevel]);
 
   return state;
 }

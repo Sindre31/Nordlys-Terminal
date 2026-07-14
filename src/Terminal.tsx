@@ -27,7 +27,7 @@ import {
   type Quote,
   type QuoteMap,
 } from './data';
-import { useQuantModel } from './quant/useQuantModel';
+import { useQuantModel, RISK_OPTIONS } from './quant/useQuantModel';
 
 function css(str: string): React.CSSProperties {
   const obj: Record<string, string> = {};
@@ -438,7 +438,7 @@ export default function Terminal() {
     .filter(Boolean) as string[];
   const riskStats = useRiskStats(riskPairs, macro.policyRate ?? 4.25);
   const backtest = useBacktest(riskPairs, macro.policyRate ?? 4.25);
-  const quantModel = useQuantModel();
+  const quantModel = useQuantModel(risk);
 
   // ---- Real conviction engine ------------------------------------------------
   // Per-holding conviction is computed from live analyst consensus (target upside
@@ -1184,6 +1184,7 @@ export default function Terminal() {
 
   const qmReady = quantModel.ready && !!quantModel.backtest;
   const qmMetrics = quantModel.backtest?.metrics;
+  const qmAsOf = quantModel.backtest?.weekKeys.at(-1);
   const pctStr = (v: number, dec = 1) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(dec)}%`;
   const qmSignals = quantModel.signals.map((s) => ({
     ...s,
@@ -1191,6 +1192,8 @@ export default function Terminal() {
     upsideEl: upside(s.upsidePct),
     targetStr: s.target != null ? fmtPrice(s.target) : '—',
   }));
+  const qmStatusLabel = quantModel.error ? quantModel.error : qmReady ? `Real weekly prices · week of ${qmAsOf}` : 'Loading…';
+  const qmTopN = RISK_OPTIONS[risk].topN;
 
   return (
 
@@ -2210,9 +2213,9 @@ export default function Terminal() {
       <div style={css("border:1px solid #3B2F63; border-radius:12px; background:#120E22; padding:16px 18px; margin-top:20px;")}>
         <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:4px;")}>
           <span style={css("font-size:14px; font-weight:600; color:#F2F4F7;")}>Systematic factor model</span>
-          <span style={css("font-size:11px; color:#8A929E;")}>6-month momentum + 13/52-week trend + low-volatility, top 5 of 12 names, weekly data</span>
+          <span style={css("font-size:11px; color:#8A929E;")}>6-month momentum + 13/52-week trend + low-volatility, top {qmTopN} of 12 names ({risk}), weekly data</span>
           <div style={css("flex:1;")}></div>
-          <span className="mono" style={css("font-size:10.5px; color:#5B626C; border:1px solid #2A2F37; border-radius:20px; padding:3px 10px;")}>{qmReady ? 'Real weekly prices' : 'Loading…'}</span>
+          <span className="mono" style={css(`font-size:10.5px; border-radius:20px; padding:3px 10px; border:1px solid ${quantModel.error ? '#5C2A2A' : '#2A2F37'}; color:${quantModel.error ? '#E4938E' : '#5B626C'};`)}>{qmStatusLabel}</span>
         </div>
         <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:12px;")}>
           <div style={css("border:1px solid #2A2440; border-radius:10px; background:#161029; padding:11px 13px;")}><div style={css("font-size:10.5px; color:#8A78B8;")}>CAGR</div><div className="mono" style={css("font-size:17px; font-weight:600; color:#3DBB84; margin-top:3px;")}>{qmMetrics ? pctStr(qmMetrics.stratCagr) : '—'}</div></div>
@@ -2231,7 +2234,7 @@ export default function Terminal() {
             <span style={css("font-size:11px; color:#9C90C0; line-height:1.4;")}>{s.reason}</span>
           </div>
         </React.Fragment>))}
-        <div style={css("font-size:11px; color:#6F6590; line-height:1.5; margin-top:12px;")}>Complementary to the backtest above: instead of the portfolio's fixed current weights, this systematically re-picks the top 5 of the 12 tracked names every 4 weeks by composite score, with a modelled 0.05% turnover cost. Small universe, ~4–5 years of history, no out-of-sample validation — illustrative of a systematic approach, not a verified edge, and not investment advice.</div>
+        <div style={css("font-size:11px; color:#6F6590; line-height:1.5; margin-top:12px;")}>Complementary to the backtest above: instead of the portfolio's fixed current weights, this systematically re-picks the top {qmTopN} of the 12 tracked names every 4 weeks by composite score (bar and position count set by the AI risk level above), with a modelled 0.05% turnover cost. Small universe, ~4–5 years of history, no out-of-sample validation — illustrative of a systematic approach, not a verified edge, and not investment advice.</div>
       </div>
     </div>
     </>)}

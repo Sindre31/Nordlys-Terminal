@@ -2,11 +2,14 @@ import { trailingReturn, sma, realizedVol, zScores, mean, stdev } from './factor
 
 // Systematic long-only equity model: 6-month momentum + 13/52-week trend + a low-volatility
 // tilt, combined into one cross-sectional z-score composite. Every 4 weeks it goes equal-weight
-// into the top 5 (of the 12-name universe) with a positive composite score, cash otherwise, with
-// a 0.05% modelled cost per unit of rebalance turnover. This is a standard textbook multi-factor
-// approach (momentum + low-vol are well documented equity factors) — not a claim that it reliably
-// beats the index going forward. Backtests like this are prone to overfitting on a small universe
-// and short history; treat the output as illustrative, not investment advice.
+// into the top N (of the 12-name universe, default 5) names clearing a minimum composite score
+// (default > 0), cash otherwise, with a 0.05% modelled cost per unit of rebalance turnover. N and
+// the score bar are adjustable via BacktestOptions so a risk-level control can make the model
+// pickier/more concentrated (conservative) or looser/more diversified (aggressive). This is a
+// standard textbook multi-factor approach (momentum + low-vol are well documented equity
+// factors) — not a claim that it reliably beats the index going forward. Backtests like this are
+// prone to overfitting on a small universe and short history; treat the output as illustrative,
+// not investment advice.
 
 const REBALANCE_EVERY_WEEKS = 4;
 const TOP_N = 5;
@@ -81,12 +84,20 @@ function groupBy(weekKeys: string[], nav: number[], keyLen: number) {
   return map;
 }
 
+export interface BacktestOptions {
+  topN?: number;
+  scoreThreshold?: number;
+}
+
 export function runBacktest(
   weekKeys: string[],
   series: Record<string, number[]>,
   tickers: string[],
   benchmarkKey: string,
+  opts: BacktestOptions = {},
 ): BacktestResult {
+  const topN = opts.topN ?? TOP_N;
+  const scoreThreshold = opts.scoreThreshold ?? 0;
   const n = weekKeys.length;
   const startIdx = Math.max(MOM_WINDOW, TREND_LONG, VOL_WINDOW);
   if (startIdx >= n - 4) {
@@ -117,9 +128,9 @@ export function runBacktest(
       const { composite } = computeScores(series, tickers, i);
       const ranked = tickers
         .map((t, idx) => ({ t, score: composite[idx] }))
-        .filter((x): x is { t: string; score: number } => x.score != null && x.score > 0)
+        .filter((x): x is { t: string; score: number } => x.score != null && x.score > scoreThreshold)
         .sort((a, b) => b.score - a.score)
-        .slice(0, TOP_N);
+        .slice(0, topN);
       const newWeights: Record<string, number> = Object.fromEntries(tickers.map((t) => [t, 0]));
       if (ranked.length > 0) {
         const w = 1 / ranked.length;
