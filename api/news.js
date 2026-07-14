@@ -24,6 +24,10 @@ function tag(block, name) {
   const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, 'i'));
   return m ? decode(m[1]) : '';
 }
+function attr(block, name, attrName) {
+  const m = block.match(new RegExp(`<${name}[^>]*\\s${attrName}="([^"]*)"[^>]*/?>`, 'i'));
+  return m ? decode(m[1]) : '';
+}
 
 async function fetchE24() {
   try {
@@ -35,8 +39,9 @@ async function fetchE24() {
         const title = tag(b, 'title');
         const link = tag(b, 'link');
         const pub = tag(b, 'pubDate');
+        const image = attr(b, 'enclosure', 'url');
         const t = pub ? Math.floor(Date.parse(pub) / 1000) : null;
-        return title ? { title, link, time: isFinite(t) ? t : null, source: 'E24', ticker: '' } : null;
+        return title ? { title, link, time: isFinite(t) ? t : null, source: 'E24', ticker: '', image } : null;
       })
       .filter(Boolean);
   } catch {
@@ -57,6 +62,7 @@ async function fetchNewsweb() {
       time: m.publishedTime ? Math.floor(Date.parse(m.publishedTime) / 1000) : null,
       source: 'Oslo Børs',
       ticker: m.issuerSign || '',
+      image: '', // Newsweb disclosures carry no photo
     }));
   } catch {
     return [];

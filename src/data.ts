@@ -67,6 +67,7 @@ export interface NewsItem {
   time: number | null;
   link: string;
   ticker: string;
+  image?: string;
 }
 
 // ---- Formatting --------------------------------------------------------------
@@ -273,7 +274,8 @@ export interface Portfolio {
 
 // Values positions at live prices (USD holdings converted via USD/NOK), and
 // derives totals, today's P&L, since-inception return and theme allocation.
-// Cost basis is inferred so the designed prices reproduce ~+18.4% since start.
+// The portfolio's inception is today: cost basis is today's live value, so
+// since-inception starts at 0% and only accrues from real performance going forward.
 export function computePortfolio(live: QuoteMap, positions: Position[], cashNok: number): Portfolio {
   const usdnok = live['USDNOK=X']?.price ?? 10.61;
   const quoteOf = (t: string): Quote | undefined => {
@@ -290,7 +292,7 @@ export function computePortfolio(live: QuoteMap, positions: Position[], cashNok:
     const valueNok = p.qty > 0 && pn != null ? p.qty * pn : p.fallbackNok;
     const chgPct = quoteOf(p.ticker)?.changePct ?? 0;
     const todayNok = (valueNok * chgPct) / 100;
-    const costNok = p.fallbackNok / 1.184;
+    const costNok = valueNok;
     return { ticker: p.ticker, theme: p.theme, valueNok, todayNok, chgPct, costNok };
   });
   const holdingsValue = rows.reduce((s, r) => s + r.valueNok, 0);

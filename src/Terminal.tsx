@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ALL_SYMBOLS,
   STOCK_YAHOO,
@@ -28,6 +28,22 @@ import {
   type QuoteMap,
 } from './data';
 import { useQuantModel, RISK_OPTIONS } from './quant/useQuantModel';
+
+// The AI portfolio's inception is today — every holding's "held since" reads as today
+// until a real rebalance changes it, rather than a fabricated pre-dated history.
+function todayLabel(): string {
+  return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function loadLS<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 function css(str: string): React.CSSProperties {
   const obj: Record<string, string> = {};
@@ -110,7 +126,7 @@ function stocks() {
 function thesis() {
   return {
     EQNR: {
-      reco: 'HOLD', size: '15.0%', target: '340 NOK', upside: 8.8, since: '21 Feb 2026',
+      reco: 'HOLD', size: '15.0%', target: '340 NOK', upside: 8.8, since: todayLabel(),
       role: 'Core energy anchor and the portfolio’s largest single position.',
       text: 'Equinor is held as the primary expression of the AI’s risk-premium tilt to oil. A Middle-East shipping-risk premium plus resilient European gas prices support cash flow, while the raised dividend and fresh buyback shrink the share count. Valuation stays undemanding at ~8x earnings, giving downside cushion if the geopolitical bid fades.',
       drivers: [
@@ -121,7 +137,7 @@ function thesis() {
       risks: ['A ceasefire that removes the crude risk premium', 'Faster-than-expected US supply growth capping prices'],
     },
     KOG: {
-      reco: 'BUY', size: '12.0%', target: '1 240 NOK', upside: 14.4, since: '12 May 2026',
+      reco: 'BUY', size: '12.0%', target: '1 240 NOK', upside: 14.4, since: todayLabel(),
       role: 'Highest-conviction defence position; structural, multi-year theme.',
       text: 'Kongsberg is the AI’s cleanest Nordnet-listed play on European rearmament. Summit pledges to lift defence budgets translate into a visible, growing order book — a durable re-rating rather than a headline pop. Position was increased +2.0% at the latest rebalance.',
       drivers: [
@@ -131,7 +147,7 @@ function thesis() {
       risks: ['A broad peace deal that slows the rearmament cycle', 'Execution/delivery delays on a fast-growing order book'],
     },
     AKRBP: {
-      reco: 'BUY', size: '8.0%', target: '285 NOK', upside: 10.1, since: '24 Jun 2026',
+      reco: 'BUY', size: '8.0%', target: '285 NOK', upside: 10.1, since: todayLabel(),
       role: 'High-beta satellite to the core energy sleeve.',
       text: 'Aker BP amplifies the energy tilt with higher operational leverage to the crude price than Equinor. Added +1.5% on the shipping-disruption supply premium; sized to be trimmed quickly if tensions ease.',
       drivers: [
@@ -141,7 +157,7 @@ function thesis() {
       risks: ['High beta cuts both ways if oil rolls over', 'Single-basin concentration in the North Sea'],
     },
     NHY: {
-      reco: 'HOLD', size: '10.0%', target: '72 NOK', upside: 4.5, since: '03 Apr 2026',
+      reco: 'HOLD', size: '10.0%', target: '72 NOK', upside: 4.5, since: todayLabel(),
       role: 'Materials exposure; flagged for review on policy risk.',
       text: 'Norsk Hydro benefits from stronger European aluminium demand and raised output guidance, but a Trump proposal for a 25% tariff on European aluminium is a binary policy overhang. The AI holds rather than adds, and has flagged the name pending a concrete decision.',
       drivers: [
@@ -151,14 +167,14 @@ function thesis() {
       risks: ['Tariff decision goes against European exporters', 'Aluminium price sensitive to a China demand slowdown'],
     },
     YAR: {
-      reco: 'HOLD', size: '6.0%', target: '360 NOK', upside: 5.3, since: '03 Apr 2026',
+      reco: 'HOLD', size: '6.0%', target: '360 NOK', upside: 5.3, since: todayLabel(),
       role: 'Grain-disruption hedge within materials.',
       text: 'Yara is held as a hedge on conflict-driven grain and fertilizer disruption. Modest sizing reflects offsetting pressure from softer gas input costs and a mixed pricing outlook.',
       drivers: [{ text: 'Conflict-driven grain-supply disruption supports fertilizer demand', sent: 'Bullish', meta: 'Conflict · AFP · 10:18' }],
       risks: ['A peace agreement easing grain-supply fears', 'Natural-gas input-cost swings compressing margins'],
     },
     MOWI: {
-      reco: 'TRIM', size: '9.0%', target: '188 NOK', upside: -3.2, since: '21 Feb 2026',
+      reco: 'TRIM', size: '9.0%', target: '188 NOK', upside: -3.2, since: todayLabel(),
       role: 'Seafood diversifier being reduced on price weakness.',
       text: 'Mowi is a diversifier the AI is actively trimming. Salmon spot prices have fallen for three straight weeks, pressuring Q3 margins. Reduced −1.0% rather than exited to retain some seafood exposure while the price trend confirms.',
       drivers: [
@@ -168,21 +184,21 @@ function thesis() {
       risks: ['Continued spot-price weakness into Q3', 'Biological/regulatory cost inflation'],
     },
     LMT: {
-      reco: 'BUY', size: '9.0%', target: '$560', upside: 9.3, since: '12 May 2026',
+      reco: 'BUY', size: '9.0%', target: '$560', upside: 9.3, since: todayLabel(),
       role: 'US defence exposure — booked outside ASK.',
       text: 'Lockheed Martin extends the defence theme into the US market, the most direct beneficiary of a rising US defence budget. As a non-EEA holding it sits on the Nordnet investeringskonto, outside the aksjesparekonto.',
       drivers: [{ text: 'US defence budget upcycle and allied procurement', sent: 'Bullish', meta: 'Defence · AP · 11:05' }],
       risks: ['US budget/appropriations gridlock', 'FX: USD/NOK swings affect NOK returns'],
     },
     XOM: {
-      reco: 'HOLD', size: '8.0%', target: '$128', upside: 8.3, since: '12 May 2026',
+      reco: 'HOLD', size: '8.0%', target: '$128', upside: 8.3, since: todayLabel(),
       role: 'US energy exposure — booked outside ASK.',
       text: 'Exxon Mobil diversifies the energy sleeve into US supermajors, carrying the same crude supply-premium logic with a large, integrated cash-return profile. Non-EEA, so held outside ASK.',
       drivers: [{ text: 'Crude supply premium from geopolitical risk', sent: 'Bullish', meta: 'Conflict · Bloomberg · 12:20' }],
       risks: ['US supply growth capping oil prices', 'FX: USD/NOK translation risk'],
     },
     NVDA: {
-      reco: 'HOLD', size: '6.0%', target: '$190', upside: 10.3, since: '12 May 2026',
+      reco: 'HOLD', size: '6.0%', target: '$190', upside: 10.3, since: todayLabel(),
       role: 'Growth/tech ballast — booked outside ASK.',
       text: 'NVIDIA provides growth ballast uncorrelated to the geopolitical trades, riding the AI-capex cycle with support from an expected rate-cut path. Kept modest given elevated volatility; non-EEA, held outside ASK.',
       drivers: [
@@ -192,14 +208,14 @@ function thesis() {
       risks: ['High valuation and realised volatility', 'AI-capex digestion / demand air-pocket'],
     },
     GLOBAL: {
-      reco: 'HOLD', size: '11.0%', target: '—', upside: 0, since: '21 Feb 2026',
+      reco: 'HOLD', size: '11.0%', target: '—', upside: 0, since: todayLabel(),
       role: 'Diversified global-equity base layer.',
       text: 'The Nordnet global index fund is the portfolio’s low-cost base layer, capturing broad market beta and a trade-de-escalation tailwind while keeping single-stock concentration in check.',
       drivers: [{ text: 'Signs of US–China tariff de-escalation lift global risk appetite', sent: 'Bullish', meta: 'Trade · CNBC · 09:40' }],
       risks: ['Global growth disappointment', 'Broad de-risking event'],
     },
     DNBTEK: {
-      reco: 'HOLD', size: '5.0%', target: '—', upside: 0, since: '12 May 2026',
+      reco: 'HOLD', size: '5.0%', target: '—', upside: 0, since: todayLabel(),
       role: 'Actively-managed tech sleeve.',
       text: 'DNB Teknologi adds an actively-managed technology tilt that benefits from the expected rate-cut tailwind, complementing the passive global fund.',
       drivers: [{ text: 'Rate-cut expectations support tech multiples', sent: 'Bullish', meta: 'Rates · macro · 09:30' }],
@@ -329,12 +345,44 @@ function scImpact(v: number) {
 type Tab = 'markets' | 'watchlist' | 'news' | 'reports' | 'alerts' | 'ai' | 'risk' | 'fx' | 'attr' | 'ins' | 'bt';
 type RiskLevel = 'conservative' | 'balanced' | 'aggressive';
 
+interface AlertRule {
+  id: number;
+  ticker: string;
+  cond: 'above' | 'below' | 'pct';
+  price: number;
+}
+interface TriggeredAlert {
+  ruleId: number;
+  ticker: string;
+  cond: 'above' | 'below' | 'pct';
+  price: number;
+  date: string;
+  at: string;
+}
+
 export default function Terminal() {
   const [tab, setTab] = useState<Tab>('markets');
   const [stock, setStock] = useState<string | null>(null);
   const [showConv, setShowConv] = useState(false);
   const [rbEvent, setRbEvent] = useState<number | null>(null);
   const [risk, setRisk] = useState<RiskLevel>('balanced');
+  const [watchTickers, setWatchTickers] = useState<string[]>(() => loadLS('nordlys_watchlist', [] as string[]));
+  const [editWatch, setEditWatch] = useState(false);
+  const [alertRules, setAlertRules] = useState<AlertRule[]>(() => loadLS('nordlys_alert_rules', [] as AlertRule[]));
+  const [triggeredToday, setTriggeredToday] = useState<TriggeredAlert[]>(() => loadLS('nordlys_alert_triggers', [] as TriggeredAlert[]));
+  const [newAlertSym, setNewAlertSym] = useState('EQNR');
+  const [newAlertCond, setNewAlertCond] = useState<'above' | 'below' | 'pct'>('above');
+  const [newAlertPrice, setNewAlertPrice] = useState('');
+
+  useEffect(() => {
+    localStorage.setItem('nordlys_watchlist', JSON.stringify(watchTickers));
+  }, [watchTickers]);
+  useEffect(() => {
+    localStorage.setItem('nordlys_alert_rules', JSON.stringify(alertRules));
+  }, [alertRules]);
+  useEffect(() => {
+    localStorage.setItem('nordlys_alert_triggers', JSON.stringify(triggeredToday));
+  }, [triggeredToday]);
 
   const active = 'padding:5px 12px; border-radius:5px; background:#1D2229; color:#fff; cursor:pointer; font-size:12.5px;';
   const idle = 'padding:5px 12px; border-radius:5px; color:#8A929E; cursor:pointer; font-size:12.5px;';
@@ -397,7 +445,52 @@ export default function Terminal() {
     return y ? summary[y] : undefined;
   };
 
-  const order = ['EQNR', 'DNB', 'TEL', 'NHY', 'MOWI', 'YAR', 'AKRBP', 'KOG', 'SALM'];
+  const order = watchTickers;
+  const addWatchSymbol = () => {
+    const input = window.prompt(`Add a ticker to your watchlist (available: ${Object.keys(base).join(', ')}):`);
+    if (!input) return;
+    const sym = input.trim().toUpperCase();
+    if (!base[sym]) {
+      window.alert(`Unknown ticker "${sym}".`);
+      return;
+    }
+    if (watchTickers.includes(sym)) return;
+    setWatchTickers((prev) => [...prev, sym]);
+  };
+  const removeWatchSymbol = (sym: string) => setWatchTickers((prev) => prev.filter((t) => t !== sym));
+
+  const createAlertRule = () => {
+    const price = parseFloat(newAlertPrice.replace(',', '.'));
+    if (!isFinite(price) || price <= 0) {
+      window.alert('Enter a valid target value first.');
+      return;
+    }
+    setAlertRules((prev) => [...prev, { id: Date.now(), ticker: newAlertSym, cond: newAlertCond, price }]);
+    setNewAlertPrice('');
+  };
+  const removeAlertRule = (id: number) => setAlertRules((prev) => prev.filter((r) => r.id !== id));
+
+  // Checks each active rule against the latest live price/change and logs a (de-duplicated,
+  // once-per-day-per-rule) trigger — real detection rather than fabricated trigger events.
+  useEffect(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const nowLabel = new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+    setTriggeredToday((prev) => {
+      const already = new Set(prev.filter((t) => t.date === today).map((t) => t.ruleId));
+      const fresh: TriggeredAlert[] = [];
+      for (const rule of alertRules) {
+        if (already.has(rule.id)) continue;
+        const price = localPrice(rule.ticker);
+        if (price == null) continue;
+        const hit =
+          rule.cond === 'above' ? price >= rule.price
+          : rule.cond === 'below' ? price <= rule.price
+          : Math.abs(liveChg(rule.ticker, 0)) >= rule.price;
+        if (hit) fresh.push({ ruleId: rule.id, ticker: rule.ticker, cond: rule.cond, price: rule.price, date: today, at: nowLabel });
+      }
+      return fresh.length ? [...fresh, ...prev].slice(0, 50) : prev;
+    });
+  }, [live, alertRules]);
 
   // ---- Live-valued AI portfolio (share positions priced at live quotes) ----
   const POSITIONS: Position[] = [
@@ -674,15 +767,19 @@ export default function Terminal() {
     };
   });
 
-  const portfolioLog = [
-    { date: '08 Jul', side: 'BUY', ticker: 'KOG', name: 'Kongsberg', qty: '+140', price: '1 081.0', account: 'Aksjesparekonto' },
-    { date: '08 Jul', side: 'BUY', ticker: 'LMT', name: 'Lockheed Martin', qty: '+22', price: '$505.60', account: 'Investeringskonto' },
-    { date: '24 Jun', side: 'BUY', ticker: 'AKRBP', name: 'Aker BP', qty: '+310', price: '254.8', account: 'Aksjesparekonto' },
-    { date: '24 Jun', side: 'SELL', ticker: 'MOWI', name: 'Mowi', qty: '−180', price: '201.4', account: 'Aksjesparekonto' },
-    { date: '12 May', side: 'BUY', ticker: 'XOM', name: 'Exxon Mobil', qty: '+180', price: '$112.10', account: 'Investeringskonto' },
-    { date: '12 May', side: 'BUY', ticker: 'NVDA', name: 'NVIDIA', qty: '+60', price: '$154.20', account: 'Investeringskonto' },
-    { date: '03 Apr', side: 'BUY', ticker: 'NHY', name: 'Norsk Hydro', qty: '+900', price: '64.10', account: 'Aksjesparekonto' },
-  ].map((t) => ({ ...t, sideEl: side(t.side) }));
+  // Portfolio inception is today, so the log is simply today's initial allocation —
+  // not a fabricated multi-month trade history.
+  const portfolioLog = POSITIONS.filter((p) => p.qty > 0).map((p) => {
+    const ah = aiHoldings.find((h) => h.ticker === p.ticker);
+    const pn = localPrice(p.ticker);
+    const isUsd = base[p.ticker]?.cur === 'USD';
+    const priceNum = pn ?? p.fallbackNok / p.qty;
+    return {
+      date: todayLabel(), side: 'BUY', ticker: p.ticker, name: ah?.name || p.ticker,
+      qty: `+${p.qty}`, price: (isUsd ? '$' : '') + fmtNum(priceNum, 2),
+      account: ah?.ask ? 'Aksjesparekonto' : 'Investeringskonto',
+    };
+  }).map((t) => ({ ...t, sideEl: side(t.side) }));
 
   const th = thesis()[stock as string];
   const sDrivers = th ? th.drivers.map((d) => ({ ...d, sentEl: sentBadge(d.sent) })) : [];
@@ -718,8 +815,8 @@ export default function Terminal() {
 
   // ---- Attribution (real, from the history engine; 1y trailing) ----
   const attrLive = riskStats.portReturn != null && Object.keys(riskStats.holdingReturns).length > 0;
-  const attrTotal = attrLive ? (riskStats.portReturn as number) : 18.4;
-  const attrBench = attrLive ? (riskStats.benchReturn as number) : 11.6;
+  const attrTotal = attrLive ? (riskStats.portReturn as number) : 0;
+  const attrBench = attrLive ? (riskStats.benchReturn as number) : 0;
   const attrActive = attrTotal - attrBench;
   // Per-holding contribution = weight × holding return (percentage points).
   const contribRaw = POSITIONS.map((p) => {
@@ -729,34 +826,25 @@ export default function Terminal() {
     return ret != null ? { ticker: p.ticker, theme: p.theme, v: (w * ret) } : null;
   }).filter(Boolean) as { ticker: string; theme: string; v: number }[];
 
-  const contribBase = attrLive && contribRaw.length
-    ? [...contribRaw].sort((a, b) => b.v - a.v)
-    : [
-        { ticker: 'KOG', theme: 'Defence', v: 2.9 }, { ticker: 'EQNR', theme: 'Energy', v: 2.1 }, { ticker: 'NHY', theme: 'Materials', v: 1.6 }, { ticker: 'LMT', theme: 'Defence', v: 1.2 },
-        { ticker: 'AKRBP', theme: 'Energy', v: 1.1 }, { ticker: 'NVDA', theme: 'Tech', v: 0.9 }, { ticker: 'XOM', theme: 'Energy', v: 0.6 }, { ticker: 'YAR', theme: 'Materials', v: 0.4 },
-        { ticker: 'GLOBAL', theme: 'Global funds', v: 0.3 }, { ticker: 'MOWI', theme: 'Seafood', v: -1.1 },
-      ];
+  const contribBase = attrLive && contribRaw.length ? [...contribRaw].sort((a, b) => b.v - a.v) : [];
   const contribMax = Math.max(3, ...contribBase.map((h) => Math.abs(h.v)));
   const contribHoldings = contribBase.map((h) => ({ ...h, barEl: contribBar(h.v, contribMax), valEl: ppVal(h.v), open: S[h.ticker] ? open(h.ticker) : undefined }));
   const topContrib = contribHoldings[0];
   const ppStr = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
-  const attrTotalStr = ppStr(attrTotal);
-  const attrBenchStr = ppStr(attrBench);
-  const attrActiveStr = ppStr(attrActive);
-  const topContribStr = topContrib ? (topContrib.v >= 0 ? '+' : '') + topContrib.v.toFixed(1) + ' pp' : '+2.9 pp';
+  const attrTotalStr = attrLive ? ppStr(attrTotal) : '—';
+  const attrBenchStr = attrLive ? ppStr(attrBench) : '—';
+  const attrActiveStr = attrLive ? ppStr(attrActive) : '—';
+  const topContribStr = topContrib ? (topContrib.v >= 0 ? '+' : '') + topContrib.v.toFixed(1) + ' pp' : '—';
 
   const themeMap = new Map<string, number>();
   (attrLive ? contribRaw : []).forEach((c) => themeMap.set(c.theme, (themeMap.get(c.theme) || 0) + c.v));
-  const contribThemes = (attrLive && themeMap.size
-    ? [...themeMap.entries()].map(([label, v]) => ({ label, v })).sort((a, b) => b.v - a.v)
-    : [
-        { label: 'Energy', v: 3.8 }, { label: 'Defence', v: 4.1 }, { label: 'Materials', v: 2.0 },
-        { label: 'Tech', v: 1.2 }, { label: 'Global fund', v: 0.3 }, { label: 'Seafood', v: -1.1 },
-      ]
-  ).map((t) => ({ ...t, barEl: contribBar(t.v, 4.5), valEl: ppVal(t.v) }));
+  const contribThemes = [...themeMap.entries()]
+    .map(([label, v]) => ({ label, v }))
+    .sort((a, b) => b.v - a.v)
+    .map((t) => ({ ...t, barEl: contribBar(t.v, 4.5), valEl: ppVal(t.v) }));
 
   // Modeled Brinson split, rescaled to sum to the real active return.
-  const attrFactor = attrLive ? attrActive / 6.8 : 1;
+  const attrFactor = attrLive ? attrActive / 6.8 : 0;
   const attrEffects = [
     { label: 'Allocation effect', v: 2.6 },
     { label: 'Selection effect', v: 3.4 },
@@ -800,27 +888,13 @@ export default function Terminal() {
 
   const rbBase = 'flex:0 0 auto; border:1px solid #23272E; border-radius:8px; padding:8px 11px; cursor:pointer;';
   const rbActive = 'flex:0 0 auto; border:1px solid #7C5CFF; background:#181233; border-radius:8px; padding:8px 11px; cursor:pointer;';
+  // The portfolio's inception is today, so there is no real rebalance history yet —
+  // this is the one true event: the initial allocation, built from today's live signals.
   const rebalData = [
-    { date: '08 Jul', changes: '+KOG +LMT', delta: 0.9, trigType: 'Breaking signal',
-      condition: 'defence_signal_score ≥ +15  ∧  conviction ≥ 65',
-      reasoning: 'A breaking defence signal (European members pledging higher budgets) pushed the defence factor score above the +15 trigger while overall conviction stayed risk-on. The model tilted into the theme intraday rather than waiting for the daily run.',
-      actions: [{ dir: 1, text: 'Bought Kongsberg', detail: '+2.0% → 12.0%' }, { dir: 1, text: 'Opened Lockheed Martin', detail: '+9.0% · outside ASK' }] },
-    { date: '24 Jun', changes: '+AKRBP −MOWI', delta: 0.6, trigType: 'Signal + risk band',
-      condition: 'crude_risk_premium = ON  ∧  seafood_momentum_3w < −5%',
-      reasoning: 'Shipping reroutes near Hormuz switched the crude supply-risk premium on, while salmon 3-week momentum broke below −5%. The model funded added energy beta by trimming the weakest-momentum diversifier.',
-      actions: [{ dir: 1, text: 'Added Aker BP', detail: '+1.5%' }, { dir: -1, text: 'Trimmed Mowi', detail: '−1.0%' }] },
-    { date: '12 May', changes: '+XOM +NVDA', delta: -0.2, trigType: 'Scheduled monthly',
-      condition: 'calendar = monthly 08:00  →  diversify geography & factor',
-      reasoning: 'The scheduled monthly rebalance flagged the book as too concentrated in NOK and value. The model added US energy and growth exposure to broaden geography and factor balance; small negative same-day mark as it bought into strength.',
-      actions: [{ dir: 1, text: 'Opened Exxon Mobil', detail: '+8.0% · outside ASK' }, { dir: 1, text: 'Opened NVIDIA', detail: '+6.0% · outside ASK' }] },
-    { date: '03 Apr', changes: '+NHY, deploy cash', delta: 1.3, trigType: 'Threshold band',
-      condition: 'cash_weight > 8% target band  →  deploy',
-      reasoning: 'Cash had drifted above the 8% upper band after dividends landed. The threshold rule redeployed the excess into the highest-conviction underweight (materials) rather than holding idle cash.',
-      actions: [{ dir: 1, text: 'Bought Norsk Hydro', detail: '+3.0%' }, { dir: 0, text: 'Cash reduced', detail: '11.2% → 6.5%' }] },
-    { date: '21 Feb', changes: 'Initial build', delta: null, trigType: 'Inception',
-      condition: 'model cold-start from baseline signal weights',
-      reasoning: 'First allocation. The model seeded the portfolio from baseline macro & geopolitical signal weights, establishing the energy / defence tilt and the diversified fund core.',
-      actions: [{ dir: 0, text: 'Initial 10-line allocation', detail: '93.5% invested' }] },
+    { date: todayLabel(), changes: 'Initial allocation', delta: null, trigType: 'Inception',
+      condition: 'model cold-start from today’s macro, geopolitical & factor signal weights',
+      reasoning: 'First allocation. The model seeded the portfolio from today’s baseline macro & geopolitical signal weights and the systematic momentum/trend/low-volatility factor scores, establishing the current theme tilts. No rebalance history exists yet — future rebalances will appear here as the model acts.',
+      actions: [{ dir: 0, text: 'Initial allocation', detail: `${(100 - port.cashPct).toFixed(1)}% invested` }] },
   ];
   const rebalEvents = rebalData.map((rb, i) => ({
     date: rb.date, changes: rb.changes, deltaEl: deltaBadge(rb.delta),
@@ -893,8 +967,9 @@ export default function Terminal() {
         time: fmtTime(n.time),
         title: n.title,
         link: n.link,
+        image: n.image || '',
       }))
-    : newsList.map((n) => ({ ...n, link: '' }));
+    : newsList.map((n) => ({ ...n, link: '', image: '' }));
 
   const sdNews = stockNews.length
     ? stockNews.slice(0, 4).map((n) => ({ title: n.title, meta: `${n.source || 'News'} · ${fmtTime(n.time)}`, link: n.link }))
@@ -915,6 +990,11 @@ export default function Terminal() {
 
   const pctColor = (v: number) => (v >= 0 ? '#3DBB84' : '#E4655E');
   const pctText = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const condLabel = (t: { cond: 'above' | 'below' | 'pct'; price: number }) =>
+    t.cond === 'above' ? `crossed above ${fmtNum(t.price, 2)}`
+    : t.cond === 'below' ? `fell below ${fmtNum(t.price, 2)}`
+    : `moved ±${t.price.toFixed(1)}% today`;
 
   // Sector moves derived from live constituent quotes (falls back to designed values).
   const SECTOR_MEMBERS: Record<string, string[]> = {
@@ -1268,23 +1348,30 @@ export default function Terminal() {
       <div style={css("border-right:1px solid #23272E; display:flex; flex-direction:column; min-height:0;")}>
         <div style={css("display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border-bottom:1px solid #23272E;")}>
           <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Watchlist</span>
-          <span className="mono" style={css("font-size:11px; color:#5B626C;")}>9 · NOK</span>
+          <span className="mono" style={css("font-size:11px; color:#5B626C;")}>{watchlist.length} · NOK</span>
         </div>
         <div className="mono" style={css("display:grid; grid-template-columns:52px 1fr 66px 62px; gap:6px; padding:6px 14px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #1A1E24;")}>
           <span>Ticker</span><span></span><span style={css("text-align:right;")}>Last</span><span style={css("text-align:right;")}>Chg</span>
         </div>
         <div style={css("overflow-y:auto; flex:1;")}>
+          {watchlist.length === 0 && (
+            <div style={css("padding:16px 14px; font-size:12px; color:#5B626C; line-height:1.5;")}>Your watchlist is empty. Use “+ Add symbol” below to start tracking instruments.</div>
+          )}
           {watchlist.map((row, i) => (<React.Fragment key={i}>
-            <div onClick={row.open} style={css("display:grid; grid-template-columns:52px 1fr 66px 62px; gap:6px; align-items:center; padding:8px 14px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-a">
+            <div onClick={editWatch ? undefined : row.open} style={css(`display:grid; grid-template-columns:52px 1fr 66px 62px; gap:6px; align-items:center; padding:8px 14px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-a">
               <span className="mono" style={css("font-weight:600; color:#F2F4F7; font-size:12.5px;")}>{row.ticker}</span>
               <span style={css("color:#7C8492; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;")}>{row.name}</span>
-              <span className="mono" style={css("text-align:right; color:#EDEFF2; font-size:12.5px;")}>{row.last}</span>
-              <span className="mono" style={css("text-align:right; font-size:12px;")} >{row.chg}</span>
+              {editWatch ? (
+                <span onClick={(e) => { e.stopPropagation(); removeWatchSymbol(row.ticker); }} className="mono" style={css("grid-column:3 / span 2; justify-self:end; color:#E4655E; cursor:pointer; font-size:11px;")}>✕ Remove</span>
+              ) : (<>
+                <span className="mono" style={css("text-align:right; color:#EDEFF2; font-size:12.5px;")}>{row.last}</span>
+                <span className="mono" style={css("text-align:right; font-size:12px;")} >{row.chg}</span>
+              </>)}
             </div>
           </React.Fragment>))}
         </div>
         <div style={css("padding:10px 14px; border-top:1px solid #23272E; font-size:11px; color:#5B626C; display:flex; justify-content:space-between;")}>
-          <span style={css("cursor:pointer;")}>+ Add symbol</span><span className="mono" style={css("cursor:pointer;")}>Edit</span>
+          <span onClick={addWatchSymbol} style={css("cursor:pointer;")}>+ Add symbol</span><span className="mono" onClick={() => setEditWatch((v) => !v)} style={css("cursor:pointer;")}>Edit</span>
         </div>
       </div>
 
@@ -1332,6 +1419,7 @@ export default function Terminal() {
           <div style={css("border-right:1px solid #23272E; padding:11px 16px;")}>
             <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#3DBB84; font-weight:600;")}>▲ Top gainers</span>
             <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
+              {gainers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>Add symbols to your watchlist</div>}
               {gainers.map((g, i) => (
                 <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
               ))}
@@ -1340,6 +1428,7 @@ export default function Terminal() {
           <div style={css("padding:11px 16px;")}>
             <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#E4655E; font-weight:600;")}>▼ Top losers</span>
             <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
+              {losers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>Add symbols to your watchlist</div>}
               {losers.map((g, i) => (
                 <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
               ))}
@@ -1364,8 +1453,12 @@ export default function Terminal() {
         </div>
         <div style={css("border-top:1px solid #23272E;")}>
           <div style={css("padding:11px 14px 8px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Triggered alerts</span></div>
-          <div style={css("padding:9px 14px; display:flex; align-items:center; gap:10px; border-top:1px solid #191D23;")}><span style={css("width:8px; height:8px; border-radius:2px; background:#3DBB84; flex:0 0 auto;")}></span><span className="mono" style={css("font-size:12px; color:#EDEFF2;")}>EQNR</span><span style={css("font-size:12px; color:#9AA1AC;")}>crossed above 310.00</span><span className="mono" style={css("margin-left:auto; font-size:11px; color:#5B626C;")}>14:02</span></div>
-          <div style={css("padding:9px 14px; display:flex; align-items:center; gap:10px; border-top:1px solid #191D23;")}><span style={css("width:8px; height:8px; border-radius:2px; background:#E4655E; flex:0 0 auto;")}></span><span className="mono" style={css("font-size:12px; color:#EDEFF2;")}>MOWI</span><span style={css("font-size:12px; color:#9AA1AC;")}>fell below 195.00</span><span className="mono" style={css("margin-left:auto; font-size:11px; color:#5B626C;")}>13:41</span></div>
+          {triggeredToday.length === 0 && (
+            <div style={css("padding:9px 14px 12px; font-size:12px; color:#5B626C;")}>No alerts triggered today.</div>
+          )}
+          {triggeredToday.slice(0, 2).map((t, i) => (
+            <div key={i} style={css("padding:9px 14px; display:flex; align-items:center; gap:10px; border-top:1px solid #191D23;")}><span style={css(`width:8px; height:8px; border-radius:2px; background:${t.cond === 'below' ? '#E4655E' : '#3DBB84'}; flex:0 0 auto;`)}></span><span className="mono" style={css("font-size:12px; color:#EDEFF2;")}>{t.ticker}</span><span style={css("font-size:12px; color:#9AA1AC;")}>{condLabel(t)}</span><span className="mono" style={css("margin-left:auto; font-size:11px; color:#5B626C;")}>{t.at}</span></div>
+          ))}
         </div>
       </div>
     </div>
@@ -1376,16 +1469,22 @@ export default function Terminal() {
     <div data-screen-label="Watchlist" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:18px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Watchlist</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>9 instruments · Oslo Børs · NOK</span>
+        <span style={css("font-size:13px; color:#8A929E;")}>{watchFull.length} instrument{watchFull.length === 1 ? '' : 's'} · NOK/USD</span>
         <div style={css("flex:1;")}></div>
-        <button style={css("border:1px solid #2D5BD0; background:#2D5BD0; color:#fff; font-size:12.5px; font-weight:500; padding:7px 14px; border-radius:7px; cursor:pointer; font-family:inherit;")}>＋ Add symbol</button>
+        {watchFull.length > 0 && (
+          <span onClick={() => setEditWatch((v) => !v)} className="mono" style={css(`cursor:pointer; font-size:12.5px; color:${editWatch ? '#EDEFF2' : '#8A929E'}; margin-right:10px;`)}>{editWatch ? 'Done' : 'Edit'}</span>
+        )}
+        <button onClick={addWatchSymbol} style={css("border:1px solid #2D5BD0; background:#2D5BD0; color:#fff; font-size:12.5px; font-weight:500; padding:7px 14px; border-radius:7px; cursor:pointer; font-family:inherit;")}>＋ Add symbol</button>
       </div>
       <div style={css("border:1px solid #23272E; border-radius:10px; overflow:hidden; background:#101317;")}>
         <div className="mono" style={css("display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; padding:10px 18px; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
           <span>Symbol</span><span style={css("text-align:right;")}>Last</span><span style={css("text-align:right;")}>Chg %</span><span style={css("text-align:right;")}>Bid</span><span style={css("text-align:right;")}>Ask</span><span style={css("text-align:right;")}>Volume</span><span style={css("text-align:right;")}>Day range</span><span style={css("text-align:right;")}>7d</span>
         </div>
+        {watchFull.length === 0 && (
+          <div style={css("padding:28px 18px; text-align:center; font-size:13px; color:#5B626C;")}>Your watchlist is empty. Click “＋ Add symbol” to start tracking instruments.</div>
+        )}
         {watchFull.map((r, i) => (<React.Fragment key={i}>
-          <div onClick={r.open} style={css("display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+          <div onClick={editWatch ? undefined : r.open} style={css(`display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-b">
             <div><span className="mono" style={css("font-weight:600; font-size:13.5px; color:#F2F4F7;")}>{r.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{r.name}</span></div>
             <span className="mono" style={css("text-align:right; font-size:13.5px; color:#EDEFF2;")}>{r.last}</span>
             <span className="mono" style={css("text-align:right; font-size:13px;")}>{r.chg}</span>
@@ -1393,7 +1492,11 @@ export default function Terminal() {
             <span className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.ask}</span>
             <span className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.vol}</span>
             <span className="mono" style={css("text-align:right; font-size:12.5px; color:#7C8492;")}>{r.range}</span>
-            <span style={css("justify-self:end;")}>{r.sparkEl}</span>
+            {editWatch ? (
+              <span onClick={(e) => { e.stopPropagation(); removeWatchSymbol(r.ticker); }} className="mono" style={css("justify-self:end; color:#E4655E; cursor:pointer; font-size:12.5px;")}>✕ Remove</span>
+            ) : (
+              <span style={css("justify-self:end;")}>{r.sparkEl}</span>
+            )}
           </div>
         </React.Fragment>))}
       </div>
@@ -1417,7 +1520,11 @@ export default function Terminal() {
         
         <div>
           <div style={css("border:1px solid #23272E; border-radius:12px; overflow:hidden; background:#101317;")}>
-            <div style={css("height:170px; background:repeating-linear-gradient(135deg,#171B21,#171B21 11px,#1B2027 11px,#1B2027 22px); display:flex; align-items:flex-end; padding:16px;")}><span className="mono" style={css("font-size:11px; color:#4E5661;")}>[ lead image — Equinor Q2 ]</span></div>
+            {feedItems[0]?.image ? (
+              <img src={feedItems[0].image} alt="" style={css("width:100%; height:170px; object-fit:cover; display:block;")} />
+            ) : (
+              <div style={css("height:170px; background:repeating-linear-gradient(135deg,#171B21,#171B21 11px,#1B2027 11px,#1B2027 22px); display:flex; align-items:flex-end; padding:16px;")}></div>
+            )}
             <a href={feedItems[0]?.link || undefined} target="_blank" rel="noreferrer" style={css("display:block; padding:18px 20px; text-decoration:none;")}>
               <div className="mono" style={css("display:flex; gap:9px; font-size:11px; color:#5B626C; margin-bottom:8px;")}><span style={css("color:#6FA8FF;")}>{feedItems[0]?.ticker || 'EQNR'}</span><span>{feedItems[0]?.source || 'Reuters'}</span><span>{feedItems[0]?.time || '14:21'}</span></div>
               <div style={css("font-size:18px; font-weight:600; line-height:1.35; color:#F2F4F7;")}>{feedItems[0]?.title || 'Equinor lifts quarterly dividend and unveils $1.2bn buyback as cash flow beats'}</div>
@@ -1426,7 +1533,11 @@ export default function Terminal() {
           <div style={css("margin-top:16px; border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             {feedItems.slice(1, 8).map((n, i) => (<React.Fragment key={i}>
               <a href={n.link || undefined} target="_blank" rel="noreferrer" style={css("display:flex; gap:14px; padding:14px 18px; border-bottom:1px solid #191D23; cursor:pointer; text-decoration:none;")} className="hov-b">
-                <div style={css("width:64px; height:52px; border-radius:7px; background:repeating-linear-gradient(135deg,#171B21,#171B21 7px,#1B2027 7px,#1B2027 14px); flex:0 0 auto;")}></div>
+                {n.image ? (
+                  <img src={n.image} alt="" style={css("width:64px; height:52px; border-radius:7px; object-fit:cover; flex:0 0 auto;")} />
+                ) : (
+                  <div style={css("width:64px; height:52px; border-radius:7px; background:repeating-linear-gradient(135deg,#171B21,#171B21 7px,#1B2027 7px,#1B2027 14px); flex:0 0 auto;")}></div>
+                )}
                 <div style={css("min-width:0;")}>
                   <div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>{n.ticker}</span><span>{n.source}</span><span>{n.time}</span></div>
                   <div style={css("font-size:13.5px; line-height:1.4; color:#DDE1E7; font-weight:500;")}>{n.title}</div>
@@ -1541,31 +1652,63 @@ export default function Terminal() {
     <div data-screen-label="Alerts" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:18px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Alerts</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>3 active · 2 triggered today</span>
+        <span style={css("font-size:13px; color:#8A929E;")}>{alertRules.length} active · {triggeredToday.filter((t) => t.date === todayKey).length} triggered today</span>
       </div>
       <div className="m-split" style={css("display:grid; grid-template-columns:1.3fr 1fr; gap:22px; align-items:start;")}>
         <div style={css("display:flex; flex-direction:column; gap:16px;")}>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             <div style={css("padding:13px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Active rules</div>
-            <div style={css("display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid #191D23;")}><span className="mono" style={css("font-weight:600; color:#F2F4F7; font-size:13.5px; width:56px;")}>EQNR</span><span style={css("font-size:13px; color:#DDE1E7;")}>Price crosses above</span><span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>320.00</span><span style={css("margin-left:auto; width:34px; height:20px; border-radius:20px; background:#2D5BD0; position:relative;")}><span style={css("position:absolute; top:2px; right:2px; width:16px; height:16px; border-radius:50%; background:#fff;")}></span></span></div>
-            <div style={css("display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid #191D23;")}><span className="mono" style={css("font-weight:600; color:#F2F4F7; font-size:13.5px; width:56px;")}>MOWI</span><span style={css("font-size:13px; color:#DDE1E7;")}>Price falls below</span><span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>190.00</span><span style={css("margin-left:auto; width:34px; height:20px; border-radius:20px; background:#2D5BD0; position:relative;")}><span style={css("position:absolute; top:2px; right:2px; width:16px; height:16px; border-radius:50%; background:#fff;")}></span></span></div>
-            <div style={css("display:flex; align-items:center; gap:12px; padding:14px 18px;")}><span className="mono" style={css("font-weight:600; color:#F2F4F7; font-size:13.5px; width:56px;")}>NHY</span><span style={css("font-size:13px; color:#DDE1E7;")}>Daily change exceeds</span><span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>±3.0%</span><span style={css("margin-left:auto; width:34px; height:20px; border-radius:20px; background:#2A2F37; position:relative;")}><span style={css("position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#8A929E;")}></span></span></div>
+            {alertRules.length === 0 && (
+              <div style={css("padding:16px 18px; font-size:13px; color:#5B626C;")}>No active alerts. Create one on the right.</div>
+            )}
+            {alertRules.map((rule, i) => (
+              <div key={rule.id} style={css(`display:flex; align-items:center; gap:12px; padding:14px 18px; ${i < alertRules.length - 1 ? 'border-bottom:1px solid #191D23;' : ''}`)}>
+                <span className="mono" style={css("font-weight:600; color:#F2F4F7; font-size:13.5px; width:56px;")}>{rule.ticker}</span>
+                <span style={css("font-size:13px; color:#DDE1E7;")}>{rule.cond === 'above' ? 'Price crosses above' : rule.cond === 'below' ? 'Price falls below' : 'Daily change exceeds'}</span>
+                <span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>{rule.cond === 'pct' ? `±${rule.price.toFixed(1)}%` : fmtNum(rule.price, 2)}</span>
+                <span onClick={() => removeAlertRule(rule.id)} className="mono" style={css("margin-left:auto; font-size:11.5px; color:#E4655E; cursor:pointer;")}>✕ Remove</span>
+              </div>
+            ))}
           </div>
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             <div style={css("padding:13px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Triggered today</div>
-            <div style={css("padding:12px 18px; display:flex; align-items:center; gap:10px; border-bottom:1px solid #191D23;")}><span style={css("width:8px; height:8px; border-radius:2px; background:#3DBB84;")}></span><span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>EQNR</span><span style={css("font-size:13px; color:#9AA1AC;")}>crossed above 310.00</span><span className="mono" style={css("margin-left:auto; font-size:11.5px; color:#5B626C;")}>14:02</span></div>
-            <div style={css("padding:12px 18px; display:flex; align-items:center; gap:10px;")}><span style={css("width:8px; height:8px; border-radius:2px; background:#E4655E;")}></span><span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>MOWI</span><span style={css("font-size:13px; color:#9AA1AC;")}>fell below 195.00</span><span className="mono" style={css("margin-left:auto; font-size:11.5px; color:#5B626C;")}>13:41</span></div>
+            {triggeredToday.filter((t) => t.date === todayKey).length === 0 && (
+              <div style={css("padding:16px 18px; font-size:13px; color:#5B626C;")}>Nothing triggered today.</div>
+            )}
+            {triggeredToday.filter((t) => t.date === todayKey).map((t, i, arr) => (
+              <div key={i} style={css(`padding:12px 18px; display:flex; align-items:center; gap:10px; ${i < arr.length - 1 ? 'border-bottom:1px solid #191D23;' : ''}`)}>
+                <span style={css(`width:8px; height:8px; border-radius:2px; background:${t.cond === 'below' ? '#E4655E' : '#3DBB84'};`)}></span>
+                <span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>{t.ticker}</span>
+                <span style={css("font-size:13px; color:#9AA1AC;")}>{condLabel(t)}</span>
+                <span className="mono" style={css("margin-left:auto; font-size:11.5px; color:#5B626C;")}>{t.at}</span>
+              </div>
+            ))}
           </div>
         </div>
-        
+
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:18px 20px;")}>
           <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>New alert</span>
           <div style={css("margin-top:14px; display:flex; flex-direction:column; gap:12px;")}>
-            <div><div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Symbol</div><div className="mono" style={css("background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:10px 12px; font-size:13px; color:#F2F4F7;")}>EQNR — Equinor</div></div>
-            <div><div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Condition</div><div style={css("display:flex; gap:6px;")}><span style={css("flex:1; text-align:center; background:#2D5BD0; border-radius:8px; padding:9px; font-size:12.5px; color:#fff; cursor:pointer;")}>Above</span><span style={css("flex:1; text-align:center; background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:9px; font-size:12.5px; color:#9AA1AC; cursor:pointer;")}>Below</span><span style={css("flex:1; text-align:center; background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:9px; font-size:12.5px; color:#9AA1AC; cursor:pointer;")}>% move</span></div></div>
-            <div><div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Target price (NOK)</div><div className="mono" style={css("background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:10px 12px; font-size:13px; color:#F2F4F7;")}>320.00</div></div>
+            <div>
+              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Symbol</div>
+              <select value={newAlertSym} onChange={(e) => setNewAlertSym(e.target.value)} className="mono" style={css("width:100%; background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:10px 12px; font-size:13px; color:#F2F4F7; font-family:inherit;")}>
+                {Object.keys(base).map((sym) => <option key={sym} value={sym}>{sym} — {base[sym].name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Condition</div>
+              <div style={css("display:flex; gap:6px;")}>
+                {(['above', 'below', 'pct'] as const).map((c) => (
+                  <span key={c} onClick={() => setNewAlertCond(c)} style={css(`flex:1; text-align:center; border-radius:8px; padding:9px; font-size:12.5px; cursor:pointer; ${newAlertCond === c ? 'background:#2D5BD0; color:#fff;' : 'background:#191D24; border:1px solid #2A2F37; color:#9AA1AC;'}`)}>{c === 'above' ? 'Above' : c === 'below' ? 'Below' : '% move'}</span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>{newAlertCond === 'pct' ? 'Daily change threshold (%)' : 'Target price'}</div>
+              <input value={newAlertPrice} onChange={(e) => setNewAlertPrice(e.target.value)} placeholder={newAlertCond === 'pct' ? '3.0' : '320.00'} className="mono" style={css("width:100%; box-sizing:border-box; background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:10px 12px; font-size:13px; color:#F2F4F7; font-family:inherit;")} />
+            </div>
             <div><div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Notify via</div><div style={css("display:flex; gap:8px; font-size:12.5px; color:#DDE1E7;")}><span style={css("background:#191D24; border:1px solid #2D5BD0; border-radius:20px; padding:5px 12px;")}>✓ Push</span><span style={css("background:#191D24; border:1px solid #2A2F37; border-radius:20px; padding:5px 12px; color:#9AA1AC;")}>Email</span></div></div>
-            <button style={css("margin-top:4px; border:none; background:#2D5BD0; color:#fff; font-size:13px; font-weight:500; padding:11px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Create alert</button>
+            <button onClick={createAlertRule} style={css("margin-top:4px; border:none; background:#2D5BD0; color:#fff; font-size:13px; font-weight:500; padding:11px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Create alert</button>
           </div>
         </div>
       </div>
@@ -1672,39 +1815,17 @@ export default function Terminal() {
               <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Rebalance history</span>
               <div style={css("flex:1;")}></div>
               <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11px; color:#9AA1AC;")}>
-                <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#3DBB84;")}></span>AI Portfolio</span>
-                <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#4E5661;")}></span>OSEBX</span>
                 <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("color:#B79BFF;")}>◇</span>Rebalance</span>
               </div>
             </div>
-            <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:8px;")}>
+            <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:12px;")}>
               <span className="mono" style={css("font-size:22px; font-weight:600; color:#F2F4F7;")}>{sinceIncStr}</span>
-              <span className="mono" style={css("font-size:12px; color:#3DBB84;")}>vs OSEBX +11.6% · since Jan 2026</span>
+              <span className="mono" style={css("font-size:12px; color:#8A929E;")}>since inception · {todayLabel()}</span>
             </div>
-            <svg viewBox="0 0 720 210" preserveAspectRatio="none" style={css("width:100%; height:200px; display:block;")}>
-              <defs><linearGradient id="rbgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3DBB84" stopOpacity="0.20"/><stop offset="100%" stopColor="#3DBB84" stopOpacity="0"/></linearGradient></defs>
-              <line x1="0" y1="50" x2="720" y2="50" stroke="#20242B" strokeWidth="1"/>
-              <line x1="0" y1="100" x2="720" y2="100" stroke="#20242B" strokeWidth="1"/>
-              <line x1="0" y1="150" x2="720" y2="150" stroke="#20242B" strokeWidth="1"/>
-              
-              <line x1="120" y1="10" x2="120" y2="185" stroke="#2C2545" strokeWidth="1" strokeDasharray="3 4"/>
-              <line x1="300" y1="10" x2="300" y2="185" stroke="#2C2545" strokeWidth="1" strokeDasharray="3 4"/>
-              <line x1="480" y1="10" x2="480" y2="185" stroke="#2C2545" strokeWidth="1" strokeDasharray="3 4"/>
-              <line x1="600" y1="10" x2="600" y2="185" stroke="#2C2545" strokeWidth="1" strokeDasharray="3 4"/>
-              <line x1="660" y1="10" x2="660" y2="185" stroke="#2C2545" strokeWidth="1" strokeDasharray="3 4"/>
-              
-              <polyline points="0,178 60,174 120,168 180,170 240,158 300,152 360,150 420,142 480,146 540,132 600,128 660,120 720,112" fill="none" stroke="#4E5661" strokeWidth="1.8"/>
-              
-              <path d="M0,175 L60,168 L120,150 L180,155 L240,130 L300,120 L360,110 L420,95 L480,100 L540,78 L600,66 L660,52 L720,40 L720,210 L0,210 Z" fill="url(#rbgrad)"/>
-              <polyline points="0,175 60,168 120,150 180,155 240,130 300,120 360,110 420,95 480,100 540,78 600,66 660,52 720,40" fill="none" stroke="#3DBB84" strokeWidth="2.2"/>
-              
-              <circle cx="120" cy="150" r="3.5" fill="#14171B" stroke="#B79BFF" strokeWidth="1.8"/>
-              <circle cx="300" cy="120" r="3.5" fill="#14171B" stroke="#B79BFF" strokeWidth="1.8"/>
-              <circle cx="480" cy="100" r="3.5" fill="#14171B" stroke="#B79BFF" strokeWidth="1.8"/>
-              <circle cx="600" cy="66" r="3.5" fill="#14171B" stroke="#B79BFF" strokeWidth="1.8"/>
-              <circle cx="660" cy="52" r="3.5" fill="#14171B" stroke="#B79BFF" strokeWidth="1.8"/>
-            </svg>
-            <div className="mono" style={css("display:flex; justify-content:space-between; font-size:10px; color:#5B626C; margin-top:4px;")}><span>Jan</span><span>Mar</span><span>May</span><span>Jul</span></div>
+            <div style={css("border:1px dashed #23272E; border-radius:10px; padding:22px 18px; text-align:center; margin-bottom:4px;")}>
+              <div style={css("font-size:13px; color:#9AA1AC;")}>No performance history yet — the portfolio was built today.</div>
+              <div style={css("font-size:11.5px; color:#5B626C; margin-top:4px;")}>A real equity curve will accumulate here from today's rebalances onward.</div>
+            </div>
             <div style={css("display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:10px;")}><span style={css("font-size:10.5px; color:#7C8492;")}>Click a rebalance to see what triggered it</span></div>
             <div style={css("display:flex; gap:8px; overflow-x:auto; padding-bottom:2px;")}>
               {rebalEvents.map((rb, i) => (<React.Fragment key={i}>
@@ -2036,12 +2157,12 @@ export default function Terminal() {
     <div data-screen-label="Attribution" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
         <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Performance attribution</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio vs OSEBX · trailing 1 year</span>
+        <span style={css("font-size:13px; color:#8A929E;")}>Current holdings vs OSEBX · trailing 1 year, hypothetical — the portfolio's own inception is today</span>
       </div>
 
-      
+
       <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Total return</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{attrTotalStr}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>portfolio · 1y</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Total return</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{attrTotalStr}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>if held 1y at current weights</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Benchmark · OSEBX</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#9AA1AC; margin-top:5px;")}>{attrBenchStr}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>price index · 1y</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#141026; border-color:#3B2F63; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Active return (alpha)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#B79BFF; margin-top:5px;")}>{attrActiveStr}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>vs OSEBX</div></div>
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Top contributor</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{topContrib ? topContrib.ticker : 'KOG'}</div><div className="mono" style={css("font-size:11px; color:#3DBB84; margin-top:2px;")}>{topContribStr}</div></div>
