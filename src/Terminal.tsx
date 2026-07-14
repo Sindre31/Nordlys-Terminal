@@ -397,7 +397,9 @@ export default function Terminal() {
   const OSLO_SET = ['EQNR', 'DNB', 'TEL', 'NHY', 'MOWI', 'YAR', 'AKRBP', 'KOG', 'SALM'];
   const summarySymbols = OSLO_SET.map((t) => STOCK_YAHOO[t]).filter(Boolean) as string[];
   const summary = useSummary(summarySymbols);
-  const dividendSyms = ['EQNR', 'AKRBP', 'KOG', 'XOM'].map((t) => STOCK_YAHOO[t]).filter(Boolean) as string[];
+  // Fetches for the full tracked universe so whichever names the model currently holds
+  // already have dividend data available, rather than a fixed subset.
+  const dividendSyms = Object.values(STOCK_YAHOO);
   const dividends = useDividends(dividendSyms);
   const insiderLive = useInsider();
   const dnbFund = useFundamentals('DNB.OL');
@@ -405,6 +407,7 @@ export default function Terminal() {
   const stockNews = useNews(stock ? stocks()[stock]?.name || '' : '', stock || '');
   const idxCloses = useChart('OSEBX.OL', '1mo');
   const detailCloses = useChart(stock ? STOCK_YAHOO[stock] || stock : null, '1mo');
+  const quantModel = useQuantModel(risk);
 
   // Merge live quotes over the static base, preserving the shape the UI uses.
   const base = stocks();
@@ -492,20 +495,49 @@ export default function Terminal() {
     });
   }, [live, alertRules]);
 
-  // ---- Live-valued AI portfolio (share positions priced at live quotes) ----
-  const POSITIONS: Position[] = [
-    { ticker: 'EQNR', qty: 617, theme: 'Energy', fallbackNok: 192675 },
-    { ticker: 'KOG', qty: 142, theme: 'Defence', fallbackNok: 154140 },
-    { ticker: 'LMT', qty: 21, theme: 'Defence', fallbackNok: 115605 },
-    { ticker: 'XOM', qty: 82, theme: 'Energy', fallbackNok: 102760 },
-    { ticker: 'AKRBP', qty: 397, theme: 'Energy', fallbackNok: 102760 },
-    { ticker: 'NHY', qty: 1864, theme: 'Materials', fallbackNok: 128450 },
-    { ticker: 'GLOBAL', qty: 0, theme: 'Global funds', fallbackNok: 141295 },
-    { ticker: 'NVDA', qty: 42, theme: 'Tech', fallbackNok: 77070 },
-    { ticker: 'YAR', qty: 225, theme: 'Materials', fallbackNok: 77070 },
-    { ticker: 'MOWI', qty: 595, theme: 'Seafood', fallbackNok: 115605 },
-  ];
-  const CASH_NOK = 83492;
+  // ---- Live-valued AI portfolio (holdings picked by the quant model, priced at live quotes) ----
+  // Holdings are the model's own top-N BUY-rated names for the current risk level (same
+  // momentum/trend/low-vol composite + topN/scoreThreshold used in the Backtest tab), sized
+  // equal-weight over a fixed notional account, with the rest held as cash. This is a real
+  // allocation decision, not a fixed narrative-driven list.
+  const THEME_OF: Record<string, string> = {
+    EQNR: 'Energy', AKRBP: 'Energy', XOM: 'Energy',
+    KOG: 'Defence', LMT: 'Defence',
+    NHY: 'Materials', YAR: 'Materials',
+    MOWI: 'Seafood', SALM: 'Seafood',
+    DNB: 'Financials', TEL: 'Telecom', NVDA: 'Tech',
+  };
+  const CASH_FRACTION: Record<RiskLevel, number> = { conservative: 0.15, balanced: 0.065, aggressive: 0.02 };
+  const TOTAL_AUM = 1_300_000;
+  const usdnokRate = live['USDNOK=X']?.price ?? 10.61;
+  const priceNokFor = (t: string): number | null => {
+    const y = STOCK_YAHOO[t];
+    const q = y ? live[y] : undefined;
+    if (!q) return null;
+    return q.currency === 'USD' ? q.price * usdnokRate : q.price;
+  };
+  const qmOpts = RISK_OPTIONS[risk];
+  const qmScores = quantModel.ready ? quantModel.backtest?.latestScores : undefined;
+  const selectedTickers = qmScores
+    ? Object.entries(qmScores)
+        .map(([t, s]) => ({ t, score: s.composite }))
+        .filter((x): x is { t: string; score: number } => x.score != null && x.score > (qmOpts.scoreThreshold ?? 0))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, qmOpts.topN ?? 5)
+        .map((x) => x.t)
+    : [];
+  const cashFraction = selectedTickers.length > 0 ? CASH_FRACTION[risk] : 1;
+  const perNameNok = selectedTickers.length > 0 ? (TOTAL_AUM * (1 - cashFraction)) / selectedTickers.length : 0;
+  const POSITIONS: Position[] = selectedTickers.map((t) => {
+    const pn = priceNokFor(t);
+    const qty = pn && pn > 0 ? Math.max(1, Math.round(perNameNok / pn)) : 0;
+    return { ticker: t, qty, theme: THEME_OF[t] || 'Other', fallbackNok: perNameNok };
+  });
+  const investedEstimate = POSITIONS.reduce((s, p) => {
+    const pn = priceNokFor(p.ticker);
+    return s + (p.qty > 0 && pn != null ? p.qty * pn : p.fallbackNok);
+  }, 0);
+  const CASH_NOK = Math.max(0, TOTAL_AUM - investedEstimate);
   const THEME_COLORS: Record<string, string> = {
     Energy: '#3DBB84',
     Defence: '#7C5CFF',
@@ -513,10 +545,12 @@ export default function Terminal() {
     Materials: '#C79A3D',
     Tech: '#4E9E8A',
     Seafood: '#B85C54',
+    Financials: '#5B8DBE',
+    Telecom: '#9A7FD1',
     Cash: '#3A414B',
   };
   const CCY: Record<string, 'NOK' | 'USD' | 'Mixed'> = {
-    EQNR: 'NOK', KOG: 'NOK', AKRBP: 'NOK', NHY: 'NOK', YAR: 'NOK', MOWI: 'NOK', DNB: 'NOK',
+    EQNR: 'NOK', KOG: 'NOK', AKRBP: 'NOK', NHY: 'NOK', YAR: 'NOK', MOWI: 'NOK', DNB: 'NOK', TEL: 'NOK', SALM: 'NOK',
     LMT: 'USD', XOM: 'USD', NVDA: 'USD', GLOBAL: 'Mixed',
   };
   const port = computePortfolio(live, POSITIONS, CASH_NOK);
@@ -531,7 +565,6 @@ export default function Terminal() {
     .filter(Boolean) as string[];
   const riskStats = useRiskStats(riskPairs, macro.policyRate ?? 4.25);
   const backtest = useBacktest(riskPairs, macro.policyRate ?? 4.25);
-  const quantModel = useQuantModel(risk);
 
   // ---- Real conviction engine ------------------------------------------------
   // Per-holding conviction is computed from live analyst consensus (target upside
@@ -663,21 +696,22 @@ export default function Terminal() {
 
   const convFactors = realFactors.map((f) => ({ ...f, barEl: factorBar(f.val), valEl: factorVal(f.val) }));
 
-  const aiHoldings = [
-    { ticker: 'EQNR', name: 'Equinor', type: 'Share · Oslo Børs · Energy', alloc: '15.0%', value: '192 675', chg: 1.24, conv: 'High', driver: 'Oil bid on Mideast risk', ask: true },
-    { ticker: 'KOG', name: 'Kongsberg Gruppen', type: 'Share · Oslo Børs · Defence', alloc: '12.0%', value: '154 140', chg: 0.19, conv: 'High', driver: 'NATO rearmament spend', ask: true },
-    { ticker: 'LMT', name: 'Lockheed Martin', type: 'Share · NYSE · Defence', alloc: '9.0%', value: '115 605', chg: 1.41, conv: 'High', driver: 'US defence budget upcycle', ask: false },
-    { ticker: 'XOM', name: 'Exxon Mobil', type: 'Share · NYSE · Energy', alloc: '8.0%', value: '102 760', chg: 0.97, conv: 'Medium', driver: 'Crude supply premium', ask: false },
-    { ticker: 'AKRBP', name: 'Aker BP', type: 'Share · Oslo Børs · Energy', alloc: '8.0%', value: '102 760', chg: 1.62, conv: 'High', driver: 'North Sea leverage to oil', ask: true },
-    { ticker: 'NHY', name: 'Norsk Hydro', type: 'Share · Oslo Børs · Materials', alloc: '10.0%', value: '128 450', chg: 2.08, conv: 'Medium', driver: 'US metals tariff watch', ask: true },
-    { ticker: 'GLOBAL', name: 'Nordnet Indeksfond Global', type: 'Fund · Global equity', alloc: '11.0%', value: '141 295', chg: 0.41, conv: 'Medium', driver: 'Trade-thaw beta', ask: true },
-    { ticker: 'NVDA', name: 'NVIDIA', type: 'Share · NASDAQ · Tech', alloc: '6.0%', value: '77 070', chg: 1.88, conv: 'Medium', driver: 'Rate-cut + AI capex', ask: false },
-    { ticker: 'YAR', name: 'Yara International', type: 'Share · Oslo Børs · Materials', alloc: '6.0%', value: '77 070', chg: 0.88, conv: 'Medium', driver: 'Grain-disruption hedge', ask: true },
-    { ticker: 'MOWI', name: 'Mowi', type: 'Share · Oslo Børs · Seafood', alloc: '9.0%', value: '115 605', chg: -1.15, conv: 'Trim', driver: 'Spot price weakness', ask: true },
-  ].map((h) => {
+  const isOsloListed = (t: string) => STOCK_YAHOO[t]?.endsWith('.OL') ?? false;
+  const EXCHANGE_OF: Record<string, string> = { NVDA: 'NASDAQ', LMT: 'NYSE', XOM: 'NYSE' };
+  const aiHoldings = POSITIONS.map((p) => {
+    const sig = quantModel.signals.find((s) => s.ticker === p.ticker);
+    return {
+      ticker: p.ticker,
+      name: base[p.ticker]?.name || p.ticker,
+      type: `Share · ${EXCHANGE_OF[p.ticker] || 'Oslo Børs'} · ${p.theme}`,
+      driver: sig?.reason || 'Selected by the momentum/trend/low-volatility factor model.',
+      conv: 'Medium',
+      ask: isOsloListed(p.ticker),
+    };
+  }).map((h) => {
     const ch = convHold[h.ticker];
     const conv = convDataReady && ch ? ch.label : h.conv;
-    // Data-driven driver line where consensus/momentum exists.
+    // Data-driven driver line where consensus/momentum exists, else the factor-model reason above.
     let driver = h.driver;
     if (convDataReady && ch && (ch.up != null || ch.ret != null)) {
       if (ch.up != null && Math.abs(ch.up) >= 3) driver = `Analyst target ${ch.up >= 0 ? '+' : ''}${ch.up.toFixed(0)}%`;
@@ -689,7 +723,7 @@ export default function Terminal() {
       driver,
       alloc: port.allocOf(h.ticker).toFixed(1) + '%',
       value: fmtNum(port.valueOf(h.ticker), 0),
-      chgEl: chgEl(liveChg(h.ticker, h.chg), 12.5),
+      chgEl: chgEl(liveChg(h.ticker, 0), 12.5),
       convEl: convBadge(conv),
       askEl: askTag(h.ask),
       open: S[h.ticker] ? open(h.ticker) : undefined,
@@ -733,39 +767,46 @@ export default function Terminal() {
     { cat: 'US Politics', source: 'Reuters', sent: 'Watch', text: 'Trump reiterates push to “drill, baby, drill” — medium-term oil supply risk', tickers: 'EQNR · AKRBP', time: '08:55' },
   ]).map((sg) => ({ ...sg, sentEl: sentBadge(sg.sent) }));
 
-  const aiActions = [
-    { dir: 1, text: 'Increased KOG +2.0%', time: '14:05', basis: 'Defence', conf: 'High', impact: '+0.9% NAV',
-      why: 'European members pledged higher defence budgets at the summit. Kongsberg is the most direct Nordnet-listed beneficiary; order-book visibility supports a durable, not headline-only, re-rating.' },
-    { dir: 1, text: 'Added AKRBP +1.5%', time: '12:22', basis: 'Conflict', conf: 'Medium', impact: '+0.6% NAV',
-      why: 'Tanker reroutes near the Strait of Hormuz add a supply-risk premium to crude. Paired with existing EQNR to lift energy beta while the shipping disruption persists; sized to trim quickly if tensions ease.' },
-    { dir: -1, text: 'Trimmed MOWI −1.0%', time: '11:40', basis: 'Sector', conf: 'Medium', impact: '-0.3% NAV',
-      why: 'Salmon spot prices fell for a third straight week, pressuring Q3 margins. Reduced rather than exited to keep seafood diversification while the price trend confirms.' },
-    { dir: 0, text: 'Flagged NHY for review', time: '08:56', basis: 'US Politics', conf: 'Watch', impact: 'no trade',
-      why: 'Trump floated a 25% tariff on European aluminium. Binary policy risk cuts both ways for Hydro, so position is held and flagged pending a concrete decision rather than traded on the rumour.' },
-  ].map((a) => ({ ...a, dotEl: dot(a.dir) }));
-
-  const aiRecos = [
-    { ticker: 'KOG', name: 'Kongsberg Gruppen', act: 'BUY', prefix: '', target: 1240, targetLabel: '1 240', up: 14.4, ask: true, reason: 'Add on European defence-budget upcycle; durable order book.' },
-    { ticker: 'AKRBP', name: 'Aker BP', act: 'BUY', prefix: '', target: 285, targetLabel: '285', up: 10.1, ask: true, reason: 'High-beta crude play while shipping-risk premium persists.' },
-    { ticker: 'LMT', name: 'Lockheed Martin', act: 'BUY', prefix: '$', target: 560, targetLabel: '$560', up: 9.3, ask: false, reason: 'US defence budget upcycle; diversifies the defence theme.' },
-    { ticker: 'MOWI', name: 'Mowi', act: 'TRIM', prefix: '', target: 188, targetLabel: '188', up: -3.2, ask: true, reason: 'Reduce on third weekly salmon-price drop and Q3 margin risk.' },
-    { ticker: 'NHY', name: 'Norsk Hydro', act: 'HOLD', prefix: '', target: 72, targetLabel: '72', up: 4.5, ask: true, reason: 'Hold pending Trump aluminium-tariff decision (binary risk).' },
-    { ticker: 'SALM', name: 'SalMar', act: 'SELL', prefix: '', target: null as number | null, targetLabel: 'exit', up: -4.9, ask: true, reason: 'Exit residual seafood beta; redeploy into defence.' },
-  ].map((rc) => {
-    const y = STOCK_YAHOO[rc.ticker];
-    const q = y ? live[y] : undefined;
-    const now = q ? q.price : null;
-    const nowStr = now != null ? rc.prefix + (now >= 500 ? fmtNum(now, 0) : fmtNum(now, 1)) : '—';
-    const up = rc.target != null && now ? ((rc.target - now) / now) * 100 : rc.up;
+  // The portfolio's only action so far is today's initial buy into each model-selected name —
+  // no fabricated intraday trade history, consistent with the empty rebalance history above.
+  const aiActions = POSITIONS.map((p) => {
+    const sig = quantModel.signals.find((s) => s.ticker === p.ticker);
     return {
-      ...rc,
-      nowTarget: `${nowStr} → ${rc.targetLabel}`,
-      actEl: actBadge(rc.act),
-      upsideEl: upside(up),
-      askEl: askTag(rc.ask),
-      open: S[rc.ticker] ? open(rc.ticker) : undefined,
+      dir: 1 as const,
+      text: `Initial buy ${p.ticker} · ${port.allocOf(p.ticker).toFixed(1)}%`,
+      time: todayLabel(),
+      basis: 'Factor model',
+      conf: 'High',
+      impact: `${port.allocOf(p.ticker).toFixed(1)}% NAV`,
+      why: sig?.reason || 'Selected by the momentum/trend/low-volatility factor model.',
     };
-  });
+  }).map((a) => ({ ...a, dotEl: dot(a.dir) }));
+
+  // Next-actions table is the same model output that picked the current holdings above:
+  // BUY names not yet held would be added at the next rebalance, SELL names currently held
+  // would be dropped. No separate fabricated recommendation list.
+  const heldSet = new Set(POSITIONS.map((p) => p.ticker));
+  const aiRecos = quantModel.signals
+    .filter((s) => s.act !== 'HOLD' && (s.act === 'BUY' ? !heldSet.has(s.ticker) : heldSet.has(s.ticker)))
+    .map((s) => {
+      const prefix = isOsloListed(s.ticker) ? '' : '$';
+      const y = STOCK_YAHOO[s.ticker];
+      const q = y ? live[y] : undefined;
+      const now = q ? q.price : null;
+      const nowStr = now != null ? prefix + (now >= 500 ? fmtNum(now, 0) : fmtNum(now, 1)) : '—';
+      const targetLabel = s.target != null ? prefix + (s.target >= 500 ? fmtNum(s.target, 0) : fmtNum(s.target, 1)) : '—';
+      return {
+        ticker: s.ticker,
+        name: s.name,
+        act: s.act,
+        nowTarget: `${nowStr} → ${targetLabel}`,
+        actEl: actBadge(s.act),
+        upsideEl: upside(s.upsidePct),
+        askEl: askTag(isOsloListed(s.ticker)),
+        reason: s.reason,
+        open: S[s.ticker] ? open(s.ticker) : undefined,
+      };
+    });
 
   // Portfolio inception is today, so the log is simply today's initial allocation —
   // not a fabricated multi-month trade history.
@@ -1082,7 +1123,7 @@ export default function Terminal() {
         })
     : calendar.map((c) => ({ ...c, mon: 'Jul' }));
 
-  const heldReportSyms = ['EQNR', 'YAR', 'MOWI', 'AKRBP', 'KOG', 'NHY'];
+  const heldReportSyms = POSITIONS.map((p) => p.ticker);
   const heldReportsLive = heldReportSyms
     .map((t) => ({ t, e: sumOf(t)?.earningsDate ?? null }))
     .filter((x) => x.e && x.e > nowSec)
@@ -1092,7 +1133,7 @@ export default function Terminal() {
   const holdingReportsDisplay = heldReportsLive.length ? heldReportsLive : holdingReports;
 
   // ---- Dividends (Yahoo events) — real amounts + yield vs live price ----
-  const divsLive = ['EQNR', 'AKRBP', 'KOG', 'XOM']
+  const divsLive = POSITIONS.map((p) => p.ticker)
     .map((t) => {
       const y = STOCK_YAHOO[t];
       const di = y ? dividends[y] : undefined;
@@ -1794,6 +1835,9 @@ export default function Terminal() {
         <div className="mono" style={css("display:grid; grid-template-columns:74px 2fr 1.3fr 0.9fr 2.4fr; gap:10px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
           <span>Action</span><span>Instrument</span><span style={css("text-align:right;")}>Now → target</span><span style={css("text-align:right;")}>Upside</span><span>Rationale</span>
         </div>
+        {aiRecos.length === 0 && (
+          <div style={css("padding:16px 18px; font-size:12.5px; color:#5B626C;")}>{quantModel.ready ? 'No changes recommended — current holdings already match the model.' : 'Loading signals…'}</div>
+        )}
         {aiRecos.map((rc, i) => (<React.Fragment key={i}>
           <div onClick={rc.open} style={css("display:grid; grid-template-columns:74px 2fr 1.3fr 0.9fr 2.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
             <span>{rc.actEl}</span>
@@ -1928,6 +1972,9 @@ export default function Terminal() {
           
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             <div style={css("padding:12px 16px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Latest AI actions</div>
+            {aiActions.length === 0 && (
+              <div style={css("padding:14px 16px; font-size:12.5px; color:#5B626C;")}>{quantModel.ready ? 'No names currently clear the model’s bar — sitting in cash.' : 'Loading signals…'}</div>
+            )}
             {aiActions.map((a, i) => (<React.Fragment key={i}>
               <div style={css("display:flex; gap:10px; padding:12px 16px; border-bottom:1px solid #191D23;")}>
                 <span style={css("width:8px; height:8px; border-radius:2px; margin-top:5px; flex:0 0 auto;")} data-dot={a.dir}>{a.dotEl}</span>
