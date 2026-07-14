@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isValidLedger, LEDGER_VERSION } from './Terminal';
+import { isValidLedger, LEDGER_VERSION } from './ledger';
 
 const validLedger = {
   version: LEDGER_VERSION,

@@ -1,7 +1,12 @@
 import Terminal from './Terminal';
+import ErrorBoundary from './ErrorBoundary';
 
 function App() {
-  return <Terminal />;
+  return (
+    <ErrorBoundary>
+      <Terminal />
+    </ErrorBoundary>
+  );
 }
 
 export default App;

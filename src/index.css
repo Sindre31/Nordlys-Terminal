@@ -63,6 +63,43 @@ a:hover {
   border-color: #5a4a8f;
 }
 
+/* Keyboard focus is visible only for keyboard users (not on mouse click). Applies to native
+   controls and to elements given role="button" tabindex="0" via the `clickable` helper. */
+:focus-visible {
+  outline: 2px solid #6fa8ff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Skeleton placeholder: a shimmering bar shown while real data loads, instead of a flash of
+   fallback/zero values. Set width/height inline via style. */
+.skel {
+  display: inline-block;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #1a1e24 25%, #23272e 37%, #1a1e24 63%);
+  background-size: 400% 100%;
+  animation: skel-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skel-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel {
+    animation: none;
+  }
+}
+
 /* ============ MOBILE / iPhone ============ */
 @media (max-width: 700px) {
   html,

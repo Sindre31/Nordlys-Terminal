@@ -6,7 +6,7 @@
 
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
-function decode(v) {
+export function decode(v) {
   return v
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/&amp;/g, '&')
@@ -20,11 +20,11 @@ function decode(v) {
     .replace(/&#197;|&Aring;/g, 'Å')
     .trim();
 }
-function tag(block, name) {
+export function tag(block, name) {
   const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, 'i'));
   return m ? decode(m[1]) : '';
 }
-function attr(block, name, attrName) {
+export function attr(block, name, attrName) {
   const m = block.match(new RegExp(`<${name}[^>]*\\s${attrName}="([^"]*)"[^>]*/?>`, 'i'));
   return m ? decode(m[1]) : '';
 }

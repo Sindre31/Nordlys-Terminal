@@ -28,21 +28,27 @@ import {
   type QuoteMap,
 } from './data';
 import { useQuantModel, RISK_OPTIONS } from './quant/useQuantModel';
+import {
+  LEDGER_VERSION,
+  isValidLedger,
+  type PortfolioLedger,
+  type LedgerHolding,
+  type LedgerTransaction,
+  type RebalanceAction,
+} from './ledger';
+import {
+  loadLS,
+  loadValidArray,
+  isAlertRule,
+  isTriggeredAlert,
+  type AlertRule,
+  type TriggeredAlert,
+} from './storage';
 
 // The AI portfolio's inception is today — every holding's "held since" reads as today
 // until a real rebalance changes it, rather than a fabricated pre-dated history.
 function todayLabel(): string {
   return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function loadLS<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
 }
 
 function css(str: string): React.CSSProperties {
@@ -349,92 +355,16 @@ function scImpact(v: number) {
 type Tab = 'markets' | 'watchlist' | 'news' | 'reports' | 'alerts' | 'ai' | 'risk' | 'fx' | 'attr' | 'ins' | 'bt';
 type RiskLevel = 'conservative' | 'balanced' | 'aggressive';
 
-interface AlertRule {
-  id: number;
-  ticker: string;
-  cond: 'above' | 'below' | 'pct';
-  price: number;
-}
-interface TriggeredAlert {
-  ruleId: number;
-  ticker: string;
-  cond: 'above' | 'below' | 'pct';
-  price: number;
-  date: string;
-  at: string;
-}
-
-interface LedgerHolding {
-  ticker: string;
-  qty: number;
-  theme: string;
-  costNok: number;
-}
-interface RebalanceAction {
-  text: string;
-  detail: string;
-  dir: 1 | -1 | 0;
-}
-interface RebalanceLogEntry {
-  date: string;
-  changes: string;
-  reasoning: string;
-  actions: RebalanceAction[];
-}
-interface NavPoint {
-  date: string;
-  totalValue: number;
-  bench: number | null; // OSEBX level on that date, for a rebased benchmark line (null if unavailable)
-}
-interface LedgerTransaction {
-  date: string;
-  side: 'BUY' | 'SELL';
-  ticker: string;
-  qty: number;
-  price: number;
-  priceCcy: 'NOK' | 'USD';
-  account: string;
-}
-// Bump whenever the ledger shape changes in a way old saved data can't satisfy. A persisted
-// ledger with a different (or missing) version is discarded on load and re-seeded fresh, so a
-// schema change can never white-screen a returning user.
-export const LEDGER_VERSION = 1;
-interface PortfolioLedger {
-  version: number;
-  inceptionDate: string;
-  holdings: LedgerHolding[];
-  cashNok: number;
-  log: RebalanceLogEntry[];
-  navHistory: NavPoint[];
-  transactions: LedgerTransaction[];
-}
-
-// Validates a value parsed from localStorage actually matches the current ledger shape before
-// we trust it. Guards against schema drift and partially-written/corrupt data.
-export function isValidLedger(v: unknown): v is PortfolioLedger {
-  if (typeof v !== 'object' || v === null) return false;
-  const l = v as Record<string, unknown>;
-  return (
-    l.version === LEDGER_VERSION &&
-    typeof l.inceptionDate === 'string' &&
-    typeof l.cashNok === 'number' &&
-    Array.isArray(l.holdings) &&
-    Array.isArray(l.log) &&
-    Array.isArray(l.navHistory) &&
-    Array.isArray(l.transactions)
-  );
-}
-
 export default function Terminal() {
   const [tab, setTab] = useState<Tab>('markets');
   const [stock, setStock] = useState<string | null>(null);
   const [showConv, setShowConv] = useState(false);
   const [rbEvent, setRbEvent] = useState<number | null>(null);
   const [risk, setRisk] = useState<RiskLevel>('balanced');
-  const [watchTickers, setWatchTickers] = useState<string[]>(() => loadLS('nordlys_watchlist', [] as string[]));
+  const [watchTickers, setWatchTickers] = useState<string[]>(() => loadValidArray('nordlys_watchlist', (v): v is string => typeof v === 'string'));
   const [editWatch, setEditWatch] = useState(false);
-  const [alertRules, setAlertRules] = useState<AlertRule[]>(() => loadLS('nordlys_alert_rules', [] as AlertRule[]));
-  const [triggeredToday, setTriggeredToday] = useState<TriggeredAlert[]>(() => loadLS('nordlys_alert_triggers', [] as TriggeredAlert[]));
+  const [alertRules, setAlertRules] = useState<AlertRule[]>(() => loadValidArray('nordlys_alert_rules', isAlertRule));
+  const [triggeredToday, setTriggeredToday] = useState<TriggeredAlert[]>(() => loadValidArray('nordlys_alert_triggers', isTriggeredAlert));
   const [newAlertSym, setNewAlertSym] = useState('EQNR');
   const [newAlertCond, setNewAlertCond] = useState<'above' | 'below' | 'pct'>('above');
   const [newAlertPrice, setNewAlertPrice] = useState('');
@@ -453,6 +383,20 @@ export default function Terminal() {
   const idle = 'padding:5px 12px; border-radius:5px; color:#8A929E; cursor:pointer; font-size:12.5px;';
   const set = (t: Tab) => () => { setTab(t); setStock(null); };
   const open = (sym: string) => () => setStock(sym);
+  // Makes a non-button clickable element keyboard-operable: focusable, activatable with
+  // Enter/Space, and announced as a button. Spread onto the primary interactive controls.
+  const clickable = (onClick: () => void, label?: string) => ({
+    onClick,
+    role: 'button',
+    tabIndex: 0,
+    ...(label ? { 'aria-label': label } : {}),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onClick();
+      }
+    },
+  });
 
   // ---- Live data (falls back to the designed values until it loads) ----
   const live: QuoteMap = useQuotes(ALL_SYMBOLS);
@@ -548,12 +492,15 @@ export default function Terminal() {
       const fresh: TriggeredAlert[] = [];
       for (const rule of alertRules) {
         if (already.has(rule.id)) continue;
-        const price = localPrice(rule.ticker);
-        if (price == null) continue;
+        // Read live quote inline (not via a render-scoped helper) so `live` is the effect's
+        // only external dependency and the hook deps are honest.
+        const y = STOCK_YAHOO[rule.ticker];
+        const q = y ? live[y] : undefined;
+        if (!q) continue;
         const hit =
-          rule.cond === 'above' ? price >= rule.price
-          : rule.cond === 'below' ? price <= rule.price
-          : Math.abs(liveChg(rule.ticker, 0)) >= rule.price;
+          rule.cond === 'above' ? q.price >= rule.price
+          : rule.cond === 'below' ? q.price <= rule.price
+          : Math.abs(q.changePct) >= rule.price;
         if (hit) fresh.push({ ruleId: rule.id, ticker: rule.ticker, cond: rule.cond, price: rule.price, date: today, at: nowLabel });
       }
       return fresh.length ? [...fresh, ...prev].slice(0, 50) : prev;
@@ -647,7 +594,9 @@ export default function Terminal() {
       navHistory: [{ date: todayISO, totalValue: TOTAL_AUM, bench: live['OSEBX.OL']?.price ?? null }],
       transactions,
     });
-    // Deliberately narrow deps: this only ever runs once, the moment the model first becomes ready.
+    // Intentionally snapshots the first-ready render's selection/prices exactly once (guarded by
+    // `if (ledger || !quantModel.ready) return`); it must not re-run as live prices tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ledger, quantModel.ready]);
 
   const POSITIONS: Position[] = (ledger?.holdings ?? []).map((h) => ({
@@ -682,15 +631,21 @@ export default function Terminal() {
     if (!ledger) return;
     const last = ledger.navHistory[ledger.navHistory.length - 1];
     if (last && last.date === todayISO) return;
+    // Price the holdings inline from `live` (so `live` is an honest dependency). Wait until every
+    // held name has a live quote before snapshotting, otherwise the recorded NAV would fall back
+    // to cost basis and ignore the day's real market move.
+    const usdnok = live['USDNOK=X']?.price ?? 10.61;
+    const priced = ledger.holdings.map((h) => {
+      const q = live[STOCK_YAHOO[h.ticker]];
+      return q ? (q.currency === 'USD' ? q.price * usdnok : q.price) : null;
+    });
+    if (ledger.holdings.length > 0 && priced.some((p) => p == null)) return;
     const daysElapsed = last ? Math.max(1, Math.round((new Date(todayISO).getTime() - new Date(last.date).getTime()) / 86400000)) : 0;
     const rate = (macro.policyRate ?? 4.25) / 100;
     const accruedCash = daysElapsed > 0 ? ledger.cashNok * Math.pow(1 + rate / 365, daysElapsed) : ledger.cashNok;
-    const holdingsValueNow = ledger.holdings.reduce((s, h) => {
-      const pn = priceNokFor(h.ticker);
-      return s + (h.qty > 0 && pn != null ? h.qty * pn : h.costNok);
-    }, 0);
+    const holdingsValueNow = ledger.holdings.reduce((s, h, i) => s + (h.qty > 0 && priced[i] != null ? h.qty * priced[i]! : h.costNok), 0);
     setLedger({ ...ledger, cashNok: accruedCash, navHistory: [...ledger.navHistory, { date: todayISO, totalValue: holdingsValueNow + accruedCash, bench: live['OSEBX.OL']?.price ?? null }] });
-  }, [ledger, todayISO]);
+  }, [ledger, todayISO, live, macro.policyRate]);
 
   // Rebalance only trades names entering or leaving the model's current selection — it doesn't
   // force existing holdings back to exact equal-weight, so cost basis for unchanged positions
@@ -778,6 +733,18 @@ export default function Terminal() {
     localStorage.removeItem('nordlys_portfolio_ledger');
     setLedger(null);
   };
+
+  // How far the held book has drifted from the model's current pick, so the manual "Rebalance
+  // now" button can say whether it's actually worth clicking (buys pending + sells pending).
+  const pendingRebalance = (() => {
+    if (!ledger || !quantModel.ready) return 0;
+    const target = new Set(rankByLiveScore(qmOpts.topN ?? 5, qmOpts.scoreThreshold ?? 0));
+    const held = new Set(ledger.holdings.map((h) => h.ticker));
+    let n = 0;
+    for (const t of target) if (!held.has(t)) n++;
+    for (const t of held) if (!target.has(t)) n++;
+    return n;
+  })();
   const sinceIncStr = (port.sinceInception >= 0 ? '+' : '') + port.sinceInception.toFixed(1) + '%';
   // Weight pairs (fraction of total portfolio value) for the real risk engine.
   const riskPairs = port.rows
@@ -1622,19 +1589,19 @@ export default function Terminal() {
       <div style={css("width:16px; height:16px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #6FA8FF, #2D5BD0);")}></div>
       <span style={css("font-weight:600; font-size:14px; letter-spacing:0.02em; color:#F2F4F7;")}>NORDLYS</span>
     </div>
-    <div className="nav" style={css("display:flex; gap:2px;")}>
-      <span onClick={goMarkets} style={css(navMarkets)}>Markets</span>
-      <span onClick={goWatch} style={css(navWatch)}>Watchlist</span>
-      <span onClick={goNews} style={css(navNews)}>News</span>
-      <span onClick={goReports} style={css(navReports)}>Reports</span>
-      <span onClick={goAlerts} style={css(navAlerts)}>Alerts</span>
-      <span onClick={goAI} style={css(navAI)}>AI Portfolio</span>
-      <span onClick={goRisk} style={css(navRisk)}>Risk</span>
-      <span onClick={goFx} style={css(navFx)}>Currency</span>
-      <span onClick={goAttr} style={css(navAttr)}>Attribution</span>
-      <span onClick={goIns} style={css(navIns)}>Insider</span>
-      <span onClick={goBt} style={css(navBt)}>Backtest</span>
-    </div>
+    <nav className="nav" style={css("display:flex; gap:2px;")} aria-label="Primary">
+      <span {...clickable(goMarkets)} aria-current={tab === 'markets' ? 'page' : undefined} style={css(navMarkets)}>Markets</span>
+      <span {...clickable(goWatch)} aria-current={tab === 'watchlist' ? 'page' : undefined} style={css(navWatch)}>Watchlist</span>
+      <span {...clickable(goNews)} aria-current={tab === 'news' ? 'page' : undefined} style={css(navNews)}>News</span>
+      <span {...clickable(goReports)} aria-current={tab === 'reports' ? 'page' : undefined} style={css(navReports)}>Reports</span>
+      <span {...clickable(goAlerts)} aria-current={tab === 'alerts' ? 'page' : undefined} style={css(navAlerts)}>Alerts</span>
+      <span {...clickable(goAI)} aria-current={tab === 'ai' ? 'page' : undefined} style={css(navAI)}>AI Portfolio</span>
+      <span {...clickable(goRisk)} aria-current={tab === 'risk' ? 'page' : undefined} style={css(navRisk)}>Risk</span>
+      <span {...clickable(goFx)} aria-current={tab === 'fx' ? 'page' : undefined} style={css(navFx)}>Currency</span>
+      <span {...clickable(goAttr)} aria-current={tab === 'attr' ? 'page' : undefined} style={css(navAttr)}>Attribution</span>
+      <span {...clickable(goIns)} aria-current={tab === 'ins' ? 'page' : undefined} style={css(navIns)}>Insider</span>
+      <span {...clickable(goBt)} aria-current={tab === 'bt' ? 'page' : undefined} style={css(navBt)}>Backtest</span>
+    </nav>
     <div style={css("flex:1;")}></div>
     <div className="hide-sm" style={css("display:flex; align-items:center; gap:8px; background:#191D24; border:1px solid #23272E; border-radius:7px; padding:6px 11px; width:220px; color:#5B626C; font-size:12.5px;")}>
       <span className="mono">⌕</span> Search symbol…
@@ -2052,7 +2019,7 @@ export default function Terminal() {
             {ledger && (
               <button onClick={resetPortfolio} style={css("border:1px solid #3A2A2A; background:#1A1214; color:#E4938E; font-size:12.5px; font-weight:500; padding:9px 14px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Reset</button>
             )}
-            <button onClick={runRebalance} disabled={!quantModel.ready} style={css(`border:none; background:${quantModel.ready ? 'linear-gradient(135deg,#7C5CFF,#4B33C7)' : '#2A2F37'}; color:#fff; font-size:12.5px; font-weight:500; padding:9px 16px; border-radius:8px; cursor:${quantModel.ready ? 'pointer' : 'not-allowed'}; font-family:inherit;`)}>↻ Rebalance now</button>
+            <button onClick={runRebalance} disabled={!quantModel.ready} style={css(`position:relative; border:none; background:${quantModel.ready ? 'linear-gradient(135deg,#7C5CFF,#4B33C7)' : '#2A2F37'}; color:#fff; font-size:12.5px; font-weight:500; padding:9px 16px; border-radius:8px; cursor:${quantModel.ready ? 'pointer' : 'not-allowed'}; font-family:inherit;`)}>↻ Rebalance now{pendingRebalance > 0 && <span className="mono" style={css("margin-left:7px; background:rgba(255,255,255,0.22); border-radius:20px; padding:1px 7px; font-size:10.5px;")}>{pendingRebalance}</span>}</button>
           </div>
           <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11px; color:#5B626C;")}>
             <span>Last run {ledger?.log[0]?.date ?? '—'}</span>
@@ -2065,19 +2032,19 @@ export default function Terminal() {
       <div style={css("display:flex; align-items:center; gap:16px; border:1px solid #23272E; border-radius:12px; background:#101317; padding:12px 16px; margin-bottom:16px;")}>
         <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; flex:0 0 auto;")}>AI risk level</span>
         <div style={css("display:flex; gap:4px; background:#0E1013; border:1px solid #23272E; border-radius:9px; padding:3px;")}>
-          <span onClick={setRiskCons} style={css(riskConsStyle)}>Conservative</span>
-          <span onClick={setRiskBal} style={css(riskBalStyle)}>Balanced</span>
-          <span onClick={setRiskAgg} style={css(riskAggStyle)}>Aggressive</span>
+          <span {...clickable(setRiskCons)} aria-pressed={risk === 'conservative'} style={css(riskConsStyle)}>Conservative</span>
+          <span {...clickable(setRiskBal)} aria-pressed={risk === 'balanced'} style={css(riskBalStyle)}>Balanced</span>
+          <span {...clickable(setRiskAgg)} aria-pressed={risk === 'aggressive'} style={css(riskAggStyle)}>Aggressive</span>
         </div>
         <span style={css("font-size:12px; color:#8A929E; line-height:1.4;")}>{riskNote}</span>
       </div>
 
       
       <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Portfolio value</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{ledger ? `NOK ${fmtNum(port.totalValue, 0)}` : 'Loading…'}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.sinceInception)}; margin-top:3px;`)}>{ledger ? `${sinceIncStr} since inception` : ' '}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Today</div><div className="mono" style={css(`font-size:23px; font-weight:600; color:${pctColor(port.totalToday)}; margin-top:5px;`)}>{port.totalToday >= 0 ? '+' : '−'}{fmtNum(Math.abs(port.totalToday), 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.todayPct)}; margin-top:3px;`)}>{pctText(port.todayPct)}</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Portfolio value</div>{ledger ? (<><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>NOK {fmtNum(port.totalValue, 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.sinceInception)}; margin-top:3px;`)}>{sinceIncStr} since inception</div></>) : (<><div className="skel" style={css("height:23px; width:150px; margin-top:6px;")}></div><div className="skel" style={css("height:12px; width:110px; margin-top:6px;")}></div></>)}</div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Today</div>{ledger ? (<><div className="mono" style={css(`font-size:23px; font-weight:600; color:${pctColor(port.totalToday)}; margin-top:5px;`)}>{port.totalToday >= 0 ? '+' : '−'}{fmtNum(Math.abs(port.totalToday), 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.todayPct)}; margin-top:3px;`)}>{pctText(port.todayPct)}</div></>) : (<><div className="skel" style={css("height:23px; width:110px; margin-top:6px;")}></div><div className="skel" style={css("height:12px; width:70px; margin-top:6px;")}></div></>)}</div>
         <div onClick={toggleConv} style={css("border:1px solid #3B2F63; border-radius:12px; background:#141026; padding:15px 17px; cursor:pointer;")} className="hov-c"><div style={css("display:flex; align-items:center; gap:6px;")}><span style={css("font-size:11.5px; color:#7C8492;")}>AI conviction</span><span className="mono" style={css("margin-left:auto; font-size:10px; color:#B79BFF;")}>{convToggleLabel}</span></div><div className="mono" style={css("font-size:23px; font-weight:600; color:#B79BFF; margin-top:5px;")}>{convScore}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>{convTilt}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Cash / next rebalance</div><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{ledger ? `${port.cashPct.toFixed(1)}%` : '—'}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>Manual — click “Rebalance now” to run the model</div></div>
+        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Cash / next rebalance</div>{ledger ? (<><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{port.cashPct.toFixed(1)}%</div><div style={css(`font-size:12px; margin-top:3px; color:${pendingRebalance > 0 ? '#B79BFF' : '#8A929E'};`)}>{pendingRebalance > 0 ? `${pendingRebalance} change${pendingRebalance === 1 ? '' : 's'} pending — model selection drifted` : 'Holdings match the model'}</div></>) : (<><div className="skel" style={css("height:23px; width:80px; margin-top:6px;")}></div><div className="skel" style={css("height:12px; width:130px; margin-top:6px;")}></div></>)}</div>
       </div>
 
       
@@ -2742,7 +2709,14 @@ export default function Terminal() {
 
   </div>
 
-  
+  <div className="app-footer" style={css("flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:6px 18px; background:#0E1013; border-top:1px solid #23272E; font-size:10.5px; color:#5B626C; line-height:1.4;")}>
+    <span style={css("color:#7C8492;")}>Illustrative — not investment advice.</span>
+    <span className="hide-sm">AI allocation is a systematic factor model on a small universe; live data via Yahoo Finance, Norges Bank, SSB &amp; Oslo Børs.</span>
+    <div style={css("flex:1;")}></div>
+    <span className="mono hide-sm">Nordlys Terminal</span>
+  </div>
+
+
   {hasStock && (<>
   <div className="stock-overlay" style={css("position:absolute; inset:0; background:rgba(6,8,11,0.55); z-index:40;")} onClick={closeStock}></div>
   <div data-screen-label="Stock detail" className="stock-panel" style={css("position:absolute; top:0; right:0; bottom:0; width:720px; background:#101317; border-left:1px solid #23272E; z-index:41; overflow-y:auto; box-shadow:-30px 0 60px rgba(0,0,0,0.4);")}>
@@ -2762,7 +2736,7 @@ export default function Terminal() {
       <div style={css("display:flex; gap:8px; align-items:center;")}>
         <button className="hide-sm" style={css("border:1px solid #2A2F37; background:#191D24; color:#DDE1E7; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>＋ Watchlist</button>
         <button className="hide-sm" style={css("border:none; background:#2D5BD0; color:#fff; font-size:12.5px; padding:8px 13px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Set alert</button>
-        <span onClick={closeStock} style={css("width:32px; height:32px; border-radius:8px; background:#191D24; border:1px solid #2A2F37; display:flex; align-items:center; justify-content:center; color:#9AA1AC; cursor:pointer; font-size:16px;")}>✕</span>
+        <span {...clickable(closeStock, 'Close stock detail')} style={css("width:32px; height:32px; border-radius:8px; background:#191D24; border:1px solid #2A2F37; display:flex; align-items:center; justify-content:center; color:#9AA1AC; cursor:pointer; font-size:16px;")}>✕</span>
       </div>
     </div>
     <div style={css("padding:16px 26px 6px;")}>
