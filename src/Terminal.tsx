@@ -115,26 +115,32 @@ function factorVal(val: number) {
 }
 
 function stocks() {
+  // Only real static metadata: display name and (for non-NOK names) the trading currency.
+  // Every price/change/range/volume/market-cap field starts as "—" and is filled from the live
+  // quote when it loads (see the S map in the component) — never a designed placeholder number.
+  // Market cap has no free live source, so it stays "—".
+  const dash = { last: '—', chg: null, open: '—', range: '—', vol: '—', cap: '—' };
+  const mk = (name: string, cur?: string) => ({ name, ...dash, ...(cur ? { cur } : {}) });
   return {
-    EQNR: { name: 'Equinor', last: '312.40', chg: 1.24, open: '309.10', range: '308.2 – 313.9', vol: '4.21M', cap: '861B' },
-    DNB: { name: 'DNB Bank', last: '223.10', chg: 0.45, open: '222.05', range: '221.4 – 224.0', vol: '1.88M', cap: '328B' },
-    TEL: { name: 'Telenor', last: '138.65', chg: -0.32, open: '139.10', range: '138.1 – 139.6', vol: '1.41M', cap: '194B' },
-    NHY: { name: 'Norsk Hydro', last: '68.92', chg: 2.08, open: '67.55', range: '67.4 – 69.2', vol: '6.04M', cap: '140B' },
-    MOWI: { name: 'Mowi', last: '194.30', chg: -1.15, open: '196.60', range: '193.8 – 197.1', vol: '2.33M', cap: '100B' },
-    YAR: { name: 'Yara International', last: '341.80', chg: 0.88, open: '338.80', range: '337.9 – 343.0', vol: '0.92M', cap: '86B' },
-    AKRBP: { name: 'Aker BP', last: '258.90', chg: 1.62, open: '254.80', range: '253.5 – 260.1', vol: '1.12M', cap: '163B' },
-    KOG: { name: 'Kongsberg Gruppen', last: '1 084.0', chg: 0.19, open: '1 082.0', range: '1 076 – 1 090', vol: '0.55M', cap: '190B' },
-    SALM: { name: 'SalMar', last: '612.50', chg: -0.74, open: '617.00', range: '610.0 – 618.5', vol: '0.41M', cap: '80B' },
-    LMT: { name: 'Lockheed Martin', last: '512.40', chg: 1.41, open: '505.60', range: '504.1 – 514.8', vol: '1.2M', cap: '$122B', cur: 'USD' },
-    XOM: { name: 'Exxon Mobil', last: '118.20', chg: 0.97, open: '117.05', range: '116.8 – 119.0', vol: '12.4M', cap: '$472B', cur: 'USD' },
-    NVDA: { name: 'NVIDIA', last: '172.30', chg: 1.88, open: '169.10', range: '168.4 – 173.5', vol: '188M', cap: '$4.1T', cur: 'USD' },
-    GLOBAL: { name: 'Nordnet Indeksfond Global', last: '248.60', chg: 0.41, open: '247.55', range: '247.0 – 249.1', vol: '—', cap: '—', cur: 'NOK' },
-    DNBTEK: { name: 'DNB Teknologi A', last: '612.10', chg: 0.62, open: '608.80', range: '607.5 – 614.0', vol: '—', cap: '—', cur: 'NOK' },
-    TOM: { name: 'Tomra Systems', last: '178.20', chg: 0.55, open: '177.10', range: '175.9 – 179.4', vol: '0.68M', cap: '48B' },
-    FRO: { name: 'Frontline', last: '221.60', chg: -0.60, open: '223.00', range: '219.8 – 224.1', vol: '1.05M', cap: '52B' },
-    ORK: { name: 'Orkla', last: '102.40', chg: 0.30, open: '102.05', range: '101.6 – 103.0', vol: '1.30M', cap: '109B' },
-    STB: { name: 'Storebrand', last: '132.80', chg: 0.75, open: '131.90', range: '130.9 – 133.5', vol: '0.85M', cap: '61B' },
-  } as Record<string, { name: string; last: string; chg: number; open: string; range: string; vol: string; cap: string; cur?: string }>;
+    EQNR: mk('Equinor'),
+    DNB: mk('DNB Bank'),
+    TEL: mk('Telenor'),
+    NHY: mk('Norsk Hydro'),
+    MOWI: mk('Mowi'),
+    YAR: mk('Yara International'),
+    AKRBP: mk('Aker BP'),
+    KOG: mk('Kongsberg Gruppen'),
+    SALM: mk('SalMar'),
+    LMT: mk('Lockheed Martin', 'USD'),
+    XOM: mk('Exxon Mobil', 'USD'),
+    NVDA: mk('NVIDIA', 'USD'),
+    GLOBAL: mk('Nordnet Indeksfond Global', 'NOK'),
+    DNBTEK: mk('DNB Teknologi A', 'NOK'),
+    TOM: mk('Tomra Systems'),
+    FRO: mk('Frontline'),
+    ORK: mk('Orkla'),
+    STB: mk('Storebrand'),
+  } as Record<string, { name: string; last: string; chg: number | null; open: string; range: string; vol: string; cap: string; cur?: string }>;
 }
 
 function thesis() {
@@ -251,7 +257,11 @@ function spark(up: boolean) {
   );
 }
 
-function chgEl(chg: number, size?: number) {
+function chgEl(chg: number | null, size?: number) {
+  if (chg == null) {
+    // No live quote yet → honest dash, never a fabricated 0.00% or designed number.
+    return React.createElement('span', { className: 'mono', style: { color: '#8A929E', fontSize: size || 12 } }, '—');
+  }
   const up = chg >= 0;
   // A directional arrow + explicit sign so the up/down meaning survives without colour — for
   // colour-blind users and for grayscale screenshots where red/green are indistinguishable.
@@ -887,7 +897,7 @@ export default function Terminal() {
     ticker: sym,
     name: S[sym].name,
     last: S[sym].last,
-    chg: React.createElement('span', { className: 'mono', style: { color: S[sym].chg >= 0 ? '#3DBB84' : '#E4655E' } }, (S[sym].chg >= 0 ? '+' : '') + S[sym].chg.toFixed(2) + '%'),
+    chg: chgEl(S[sym].chg),
     open: open(sym),
   }));
 
@@ -897,31 +907,12 @@ export default function Terminal() {
     ticker: sym, name: S[sym].name, last: S[sym].last,
     chg: chgEl(S[sym].chg, 13),
     bid: '—', ask: '—', vol: S[sym].vol, range: S[sym].range,
-    sparkEl: spark(S[sym].chg >= 0),
+    sparkEl: S[sym].chg == null ? null : spark(S[sym].chg >= 0),
     open: open(sym),
   }));
 
-  const newsList = [
-    { ticker: 'NHY', source: 'E24', time: '13:58', title: 'Norsk Hydro raises aluminium output guidance on stronger European demand' },
-    { ticker: 'MOWI', source: 'DN', time: '13:40', title: 'Mowi shares slip as salmon spot prices fall for a third straight week' },
-    { ticker: 'DNB', source: 'Bloomberg', time: '12:55', title: 'DNB reiterates 2026 return-on-equity target ahead of Q2 report' },
-    { ticker: 'KOG', source: 'Reuters', time: '11:20', title: 'Kongsberg wins NOK 4.3bn defence contract from NATO partner' },
-    { ticker: 'AKRBP', source: 'E24', time: '10:44', title: 'Aker BP raises 2026 production guidance after Yggdrasil ramp-up' },
-    { ticker: 'MKT', source: 'DN', time: '09:30', title: 'Norges Bank holds policy rate at 4.25%, signals cut in autumn' },
-  ];
-
   const cur = S[stock as string] || S.EQNR;
 
-  const analystRecs = [
-    { broker: 'DNB Carnegie', ticker: 'EQNR', name: 'Equinor', rating: 'Buy', target: '340', prev: '(325)', date: '09 Jul' },
-    { broker: 'ABG Sundal Collier', ticker: 'KOG', name: 'Kongsberg Gr.', rating: 'Buy', target: '1 250', prev: '(1 150)', date: '08 Jul' },
-    { broker: 'Pareto Securities', ticker: 'AKRBP', name: 'Aker BP', rating: 'Buy', target: '290', prev: '(275)', date: '08 Jul' },
-    { broker: 'Arctic Securities', ticker: 'MOWI', name: 'Mowi', rating: 'Hold', target: '200', prev: '(230)', date: '07 Jul' },
-    { broker: 'Kepler Cheuvreux', ticker: 'NHY', name: 'Norsk Hydro', rating: 'Sell', target: '62', prev: '(70)', date: '04 Jul' },
-    { broker: 'Nordea', ticker: 'YAR', name: 'Yara Int.', rating: 'Buy', target: '370', prev: '(360)', date: '03 Jul' },
-    { broker: 'SEB', ticker: 'DNB', name: 'DNB Bank', rating: 'Hold', target: '230', prev: '(230)', date: '05 Jul' },
-    { broker: 'Goldman Sachs', ticker: 'TEL', name: 'Telenor', rating: 'Neutral', target: '140', prev: '(145)', date: '02 Jul' },
-  ].map((ar) => ({ ...ar, ratingEl: rating(ar.rating), open: S[ar.ticker] ? open(ar.ticker) : undefined }));
 
   const convFactors = realFactors.map((f) => ({ ...f, barEl: factorBar(f.val), valEl: factorVal(f.val) }));
 
@@ -1151,12 +1142,6 @@ export default function Terminal() {
       };
     });
 
-  const divs = [
-    { ticker: 'EQNR', ex: '05 Aug', amount: 'NOK 3.90', yield: '4.9%' },
-    { ticker: 'AKRBP', ex: '12 Aug', amount: 'NOK 5.60', yield: '5.4%' },
-    { ticker: 'KOG', ex: '20 Aug', amount: 'NOK 12.50', yield: '2.3%' },
-    { ticker: 'XOM', ex: '08 Aug', amount: '$0.99', yield: '3.3%' },
-  ];
   const rbBase = 'flex:0 0 auto; border:1px solid #23272E; border-radius:8px; padding:8px 11px; cursor:pointer;';
   const rbActive = 'flex:0 0 auto; border:1px solid #7C5CFF; background:#181233; border-radius:8px; padding:8px 11px; cursor:pointer;';
   // Real rebalance log from the persisted ledger — one entry for the initial allocation, plus
@@ -1238,8 +1223,10 @@ export default function Terminal() {
 
   const osebx = live['OSEBX.OL'];
 
+  // Only names with a live quote can be ranked — no fabricated change values padding the list.
   const ranked = order
-    .map((sym) => ({ sym, chg: liveChg(sym, base[sym].chg) }))
+    .map((sym) => ({ sym, chg: liveChg(sym, NaN) }))
+    .filter((x) => !Number.isNaN(x.chg))
     .sort((a, b) => b.chg - a.chg);
   const gainers = ranked.slice(0, 4);
   const losers = ranked.slice(-4).reverse();
@@ -1252,16 +1239,16 @@ export default function Terminal() {
   const idxPath = buildChartPath(idxCloses, 700, 210, 20, 30);
   const detailPath = buildChartPath(detailCloses, 660, 240, 20, 20);
 
-  const feedItems = marketNews.length
-    ? marketNews.slice(0, 8).map((n) => ({
-        ticker: n.ticker ? n.ticker.replace('.OL', '') : 'MKT',
-        source: n.source || 'News',
-        time: fmtTime(n.time),
-        title: n.title,
-        link: n.link,
-        image: n.image || '',
-      }))
-    : newsList.map((n) => ({ ...n, link: '', image: '' }));
+  // Real newswire only — empty until the live feed responds (honest "awaiting" state in the
+  // render), never a fabricated headline list.
+  const feedItems = marketNews.slice(0, 8).map((n) => ({
+    ticker: n.ticker ? n.ticker.replace('.OL', '') : 'MKT',
+    source: n.source || 'News',
+    time: fmtTime(n.time),
+    title: n.title,
+    link: n.link,
+    image: n.image || '',
+  }));
 
   // Real headlines only — no fabricated fallback list. Empty until the live newswire responds,
   // and the render shows an honest "awaiting feed" state rather than invented stories.
@@ -1317,7 +1304,6 @@ export default function Terminal() {
     return 'Hold';
   };
   const consensus = OSLO_SET.map((t) => ({ t, s: sumOf(t) })).filter((x) => x.s && x.s.targetMean != null);
-  const analystLive = consensus.length >= 3;
   const analystRecsLive = consensus.map(({ t, s }) => {
     const now = localPrice(t);
     const up = s!.targetMean != null && now ? ((s!.targetMean - now) / now) * 100 : null;
@@ -1334,10 +1320,11 @@ export default function Terminal() {
       open: S[t] ? open(t) : undefined,
     };
   });
-  const analystDisplay = analystLive ? analystRecsLive : analystRecs;
-  const buyN = analystLive ? analystDisplay.filter((r) => r.rating === 'Buy').length : 6;
-  const holdN = analystLive ? analystDisplay.filter((r) => r.rating === 'Hold').length : 3;
-  const sellN = analystLive ? analystDisplay.filter((r) => r.rating === 'Sell').length : 1;
+  // Real analyst consensus only (Yahoo) — no fabricated broker table. Empty → honest empty state.
+  const analystDisplay = analystRecsLive;
+  const buyN = analystDisplay.filter((r) => r.rating === 'Buy').length;
+  const holdN = analystDisplay.filter((r) => r.rating === 'Hold').length;
+  const sellN = analystDisplay.filter((r) => r.rating === 'Sell').length;
 
   // ---- Earnings calendar + held-name reports (Yahoo calendarEvents) ----
   // Yahoo's calendarEvents.earnings.earningsDate[0] sometimes only has the *last reported* date
@@ -1384,8 +1371,9 @@ export default function Terminal() {
       return { ticker: t, ex: fmtDayMon(di.latestDate).label, amount: pfx + fmtNum(di.latest, 2), yield: yld != null ? yld.toFixed(1) + '%' : '—' };
     })
     .filter(Boolean) as { ticker: string; ex: string; amount: string; yield: string }[];
-  const divsDisplay = divsLive.length ? divsLive : divs;
-  const divsLabel = divsLive.length ? 'Latest dividends' : 'Upcoming dividends';
+  // Real dividend history (Yahoo events) only — empty → honest empty state, no invented rows.
+  const divsDisplay = divsLive;
+  const divsLabel = 'Latest dividends';
 
   // ---- Insider trades (official Oslo Børs Newsweb) ----
   const insiderDisplay = insiderLive.length
@@ -1505,11 +1493,11 @@ export default function Terminal() {
     return pfx + fmtNum(v, 0);
   };
   const rcCur = dnbFund?.currency || 'NOK';
-  const rcRev = dnbFund ? fmtBn(dnbFund.revenue, rcCur) : 'NOK 16.1bn';
-  const rcNI = dnbFund ? fmtBn(dnbFund.netIncome, rcCur) : 'NOK 9.4bn';
-  const rcEps = dnbFund && dnbFund.eps != null ? dnbFund.eps.toFixed(2) : '6.02';
-  const rcRoe = dnbFund && dnbFund.roe != null ? (dnbFund.roe * 100).toFixed(1) + '%' : '14.2%';
-  const rcBeat = dnbFund ? dnbFund.beat : true;
+  const rcRev = dnbFund ? fmtBn(dnbFund.revenue, rcCur) : '—';
+  const rcNI = dnbFund ? fmtBn(dnbFund.netIncome, rcCur) : '—';
+  const rcEps = dnbFund && dnbFund.eps != null ? dnbFund.eps.toFixed(2) : '—';
+  const rcRoe = dnbFund && dnbFund.roe != null ? (dnbFund.roe * 100).toFixed(1) + '%' : '—';
+  const rcBeat = dnbFund ? dnbFund.beat : null;
   const revTrend = dnbFund?.revenueTrend?.length ? dnbFund.revenueTrend.slice(-8) : null;
   const revBars = revTrend
     ? (() => {
@@ -1756,8 +1744,8 @@ export default function Terminal() {
             </div>
           </div>
           <div style={css("display:flex; align-items:baseline; gap:10px; margin-top:6px;")}>
-            <span className="mono" style={css("font-size:26px; font-weight:600; color:#F2F4F7;")}>{osebx ? fmtNum(osebx.price, 2) : '1 486.20'}</span>
-            <span className="mono" style={css(`font-size:13px; color:${osebx ? pctColor(osebx.changePct) : '#3DBB84'};`)}>{osebx ? `${osebx.change >= 0 ? '+' : ''}${fmtNum(osebx.change, 2)} (${pctText(osebx.changePct)})` : '+9.14 (+0.62%)'}</span>
+            <span className="mono" style={css("font-size:26px; font-weight:600; color:#F2F4F7;")}>{osebx ? fmtNum(osebx.price, 2) : '—'}</span>
+            <span className="mono" style={css(`font-size:13px; color:${osebx ? pctColor(osebx.changePct) : '#8A929E'};`)}>{osebx ? `${osebx.change >= 0 ? '+' : ''}${fmtNum(osebx.change, 2)} (${pctText(osebx.changePct)})` : '—'}</span>
           </div>
         </div>
         <div style={css("padding:6px 6px 0;")}>
@@ -1886,15 +1874,19 @@ export default function Terminal() {
         
         <div>
           <div style={css("border:1px solid #23272E; border-radius:12px; overflow:hidden; background:#101317;")}>
-            {feedItems[0]?.image ? (
-              <img src={feedItems[0].image} alt="" style={css("width:100%; height:170px; object-fit:cover; display:block;")} />
-            ) : (
-              <div style={css("height:170px; background:repeating-linear-gradient(135deg,#171B21,#171B21 11px,#1B2027 11px,#1B2027 22px); display:flex; align-items:flex-end; padding:16px;")}></div>
-            )}
-            <a href={feedItems[0]?.link || undefined} target="_blank" rel="noreferrer" style={css("display:block; padding:18px 20px; text-decoration:none;")}>
-              <div className="mono" style={css("display:flex; gap:9px; font-size:11px; color:#5B626C; margin-bottom:8px;")}><span style={css("color:#6FA8FF;")}>{feedItems[0]?.ticker || 'EQNR'}</span><span>{feedItems[0]?.source || 'Reuters'}</span><span>{feedItems[0]?.time || '14:21'}</span></div>
-              <div style={css("font-size:18px; font-weight:600; line-height:1.35; color:#F2F4F7;")}>{feedItems[0]?.title || 'Equinor lifts quarterly dividend and unveils $1.2bn buyback as cash flow beats'}</div>
-            </a>
+            {feedItems.length === 0 ? (
+              <div style={css("padding:34px 20px; text-align:center;")}><div className="mono" style={css("font-size:12.5px; color:#8A929E;")}>Awaiting the live newswire…</div><div style={css("font-size:11.5px; color:#5B626C; margin-top:6px; line-height:1.5;")}>Headlines from E24 &amp; Oslo Børs load here as they publish — no placeholder stories.</div></div>
+            ) : (<>
+              {feedItems[0]?.image ? (
+                <img src={feedItems[0].image} alt="" style={css("width:100%; height:170px; object-fit:cover; display:block;")} />
+              ) : (
+                <div style={css("height:170px; background:repeating-linear-gradient(135deg,#171B21,#171B21 11px,#1B2027 11px,#1B2027 22px); display:flex; align-items:flex-end; padding:16px;")}></div>
+              )}
+              <a href={feedItems[0]?.link || undefined} target="_blank" rel="noreferrer" style={css("display:block; padding:18px 20px; text-decoration:none;")}>
+                <div className="mono" style={css("display:flex; gap:9px; font-size:11px; color:#5B626C; margin-bottom:8px;")}><span style={css("color:#6FA8FF;")}>{feedItems[0]?.ticker}</span><span>{feedItems[0]?.source}</span><span>{feedItems[0]?.time}</span></div>
+                <div style={css("font-size:18px; font-weight:600; line-height:1.35; color:#F2F4F7;")}>{feedItems[0]?.title}</div>
+              </a>
+            </>)}
           </div>
           <div style={css("margin-top:16px; border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             {feedItems.slice(1, 8).map((n, i) => (<React.Fragment key={i}>
@@ -2003,8 +1995,11 @@ export default function Terminal() {
           </div>
         </div>
         <div className="mono" style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
-          <span>{analystLive ? 'Coverage' : 'Broker'}</span><span>Instrument</span><span style={css("text-align:center;")}>Rating</span><span style={css("text-align:right;")}>{analystLive ? 'Target (range)' : 'Target (prev)'}</span><span style={css("text-align:right;")}>{analystLive ? 'Upside' : 'Date'}</span>
+          <span>Coverage</span><span>Instrument</span><span style={css("text-align:center;")}>Rating</span><span style={css("text-align:right;")}>Target (range)</span><span style={css("text-align:right;")}>Upside</span>
         </div>
+        {analystDisplay.length === 0 && (
+          <div style={css("padding:22px 18px; font-size:12.5px; color:#5B626C; line-height:1.5;")}>Awaiting analyst consensus from the live feed (Yahoo). No broker figures are shown until it responds.</div>
+        )}
         {analystDisplay.map((ar, i) => (<React.Fragment key={i}>
           <div onClick={ar.open} style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
             <span style={css("font-size:12.5px; color:#DDE1E7;")}>{ar.broker}</span>
@@ -2350,9 +2345,11 @@ export default function Terminal() {
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             <div style={css("display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid #23272E;")}>
               <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Dividends &amp; reports</span>
-              <span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#3DBB84;")}>YTD NOK 18 420</span>
             </div>
             <div style={css("padding:6px 16px 4px;")}><span className="mono" style={css("font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C;")}>{divsLabel}</span></div>
+            {divsDisplay.length === 0 && (
+              <div style={css("padding:8px 16px 12px; font-size:11.5px; color:#5B626C; line-height:1.5;")}>No dividend history from the live feed yet.</div>
+            )}
             {divsDisplay.map((d, i) => (<React.Fragment key={i}>
               <div style={css("display:grid; grid-template-columns:56px 1fr auto auto; gap:10px; align-items:center; padding:9px 16px; border-bottom:1px solid #191D23;")}>
                 <span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{d.ticker}</span>
