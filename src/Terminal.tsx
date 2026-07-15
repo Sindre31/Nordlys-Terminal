@@ -225,7 +225,7 @@ export default function Terminal() {
     }
   };
 
-  // ---- Live data (falls back to the designed values until it loads) ----
+  // ---- Live data (fields render "—" until the live values load) ----
   const live: QuoteMap = useQuotes(ALL_SYMBOLS);
   const dataHealth = useDataHealth();
   const clock = useOsloClock();
@@ -1048,7 +1048,7 @@ export default function Terminal() {
     return { name, pct };
   });
 
-  // ---- Analyst consensus (Yahoo), falls back to the designed table ----
+  // ---- Analyst consensus (Yahoo); an empty "awaiting feed" state when none loads ----
   const ratingFromKey = (key: string | null, mean: number | null): string => {
     const k = (key || '').toLowerCase();
     if (k === 'strong_buy' || k === 'buy') return 'Buy';

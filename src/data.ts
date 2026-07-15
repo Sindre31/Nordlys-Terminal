@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 // ---- Yahoo symbol maps -------------------------------------------------------
 
 // Internal ticker -> Yahoo Finance symbol. Funds (GLOBAL, DNBTEK) have no
-// reliable free quote, so they stay on their designed placeholder values.
+// reliable free quote, so their market fields render "—" (no fabricated numbers).
 export const STOCK_YAHOO: Record<string, string> = {
   EQNR: 'EQNR.OL',
   DNB: 'DNB.OL',
