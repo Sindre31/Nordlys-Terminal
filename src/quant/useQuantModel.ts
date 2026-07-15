@@ -22,6 +22,8 @@ const NAMES: Record<string, string> = {
   YAR: 'Yara International', AKRBP: 'Aker BP', KOG: 'Kongsberg Gruppen', SALM: 'SalMar',
   LMT: 'Lockheed Martin', XOM: 'Exxon Mobil', NVDA: 'NVIDIA',
   TOM: 'Tomra Systems', FRO: 'Frontline', ORK: 'Orkla', STB: 'Storebrand',
+  AKSO: 'Aker Solutions', SUBC: 'Subsea 7', SCATC: 'Scatec', GJF: 'Gjensidige',
+  NOD: 'Nordic Semiconductor', ELK: 'Elkem', AKER: 'Aker ASA', BAKKA: 'Bakkafrost',
 };
 
 // Per-name cross-sectional z-scores for each factor, so the model's pick is auditable rather
@@ -206,7 +208,7 @@ function useRawMarketData(): FetchState {
 
 // Systematic momentum + trend + low-volatility factor model, complementary to the
 // portfolio's current-weights backtest above: this one dynamically picks among the
-// 12 tracked names each month rather than holding fixed weights. See backtest.ts for
+// tracked names each month rather than holding fixed weights. See backtest.ts for
 // the methodology and its caveats (small universe, short history, no OOS validation).
 // The risk-level toggle changes how many names it holds and how strict the quality bar
 // is (conservative = pickier + more cash-like, aggressive = looser + more diversified),

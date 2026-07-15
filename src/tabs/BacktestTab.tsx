@@ -100,7 +100,7 @@ export default function BacktestTab({ backtest, btChart, btm, btAnnual, qmTopN, 
       <div style={css("border:1px solid #3B2F63; border-radius:12px; background:#120E22; padding:16px 18px; margin-top:20px;")}>
         <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:4px;")}>
           <span style={css("font-size:14px; font-weight:600; color:#F2F4F7;")}>Systematic factor model</span>
-          <span style={css("font-size:11px; color:#8A929E;")}>6-month momentum + 13/52-week trend + low-volatility, top {qmTopN} of 12 names ({risk}), weekly data</span>
+          <span style={css("font-size:11px; color:#8A929E;")}>6-month momentum + 13/52-week trend + low-volatility, top {qmTopN}{quantModel.signals.length ? ` of ${quantModel.signals.length}` : ''} names ({risk}), weekly data</span>
           <div style={css("flex:1;")}></div>
           <span className="mono" style={css(`font-size:10.5px; border-radius:20px; padding:3px 10px; border:1px solid ${quantModel.error ? '#5C2A2A' : '#2A2F37'}; color:${quantModel.error ? '#E4938E' : '#5B626C'};`)}>{qmStatusLabel}</span>
         </div>
@@ -139,7 +139,7 @@ export default function BacktestTab({ backtest, btChart, btm, btAnnual, qmTopN, 
             </div>
           </div>
         )}
-        <div style={css("font-size:11px; color:#6F6590; line-height:1.5; margin-top:12px;")}>Complementary to the backtest above: instead of the portfolio's fixed current weights, this systematically re-picks the top {qmTopN} of the 12 tracked names every 4 weeks by composite score (bar and position count set by the AI risk level above), with a modelled 0.05% turnover cost. Small universe, ~4–5 years of history{quantModel.splitValidation ? ' — split in half above as a basic out-of-sample check' : ', not enough history yet for an out-of-sample split'} — illustrative of a systematic approach, not a verified edge, and not investment advice.</div>
+        <div style={css("font-size:11px; color:#6F6590; line-height:1.5; margin-top:12px;")}>Complementary to the backtest above: instead of the portfolio's fixed current weights, this systematically re-picks the top {qmTopN} of the {quantModel.signals.length ? `${quantModel.signals.length} ` : ''}tracked names every 4 weeks by composite score (bar and position count set by the AI risk level above), with a modelled 0.05% turnover cost. Small universe, ~4–5 years of history{quantModel.splitValidation ? ' — split in half above as a basic out-of-sample check' : ', not enough history yet for an out-of-sample split'} — illustrative of a systematic approach, not a verified edge, and not investment advice.</div>
       </div>
     </div>
   );

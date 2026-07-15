@@ -2,7 +2,7 @@ import { trailingReturn, sma, realizedVol, zScores, mean, stdev } from './factor
 
 // Systematic long-only equity model: 6-month momentum + 13/52-week trend + a low-volatility
 // tilt, combined into one cross-sectional z-score composite. Every 4 weeks it goes equal-weight
-// into the top N (of the 12-name universe, default 5) names clearing a minimum composite score
+// into the top N (of the tracked universe, default 5) names clearing a minimum composite score
 // (default > 0), cash otherwise, with a 0.05% modelled cost per unit of rebalance turnover. N and
 // the score bar are adjustable via BacktestOptions so a risk-level control can make the model
 // pickier/more concentrated (conservative) or looser/more diversified (aggressive). This is a
