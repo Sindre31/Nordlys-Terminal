@@ -1,0 +1,17 @@
+{
+  "name": "Nordlys Terminal",
+  "short_name": "Nordlys",
+  "description": "Live Norwegian markets, news and a systematic AI portfolio benchmarked against OSEBX. Illustrative — not investment advice.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}

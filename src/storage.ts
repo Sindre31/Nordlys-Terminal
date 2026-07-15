@@ -58,6 +58,38 @@ export function isAlertRule(v: unknown): v is AlertRule {
   );
 }
 
+export interface AlertQuote {
+  price: number;
+  changePct: number;
+}
+
+// Given the active rules, a quote lookup, and the set of ruleIds already triggered today, returns
+// the newly triggered alerts. Pure (no clock / IO — the caller passes date+time), so the actual
+// price-crossing detection can be unit-tested. Rules with no live quote are skipped (never a
+// fabricated trigger). "pct" fires on absolute daily move; above/below on the live price.
+export function evaluateAlerts(
+  rules: AlertRule[],
+  quoteFor: (ticker: string) => AlertQuote | undefined,
+  alreadyTriggered: Set<number>,
+  date: string,
+  at: string,
+): TriggeredAlert[] {
+  const fresh: TriggeredAlert[] = [];
+  for (const rule of rules) {
+    if (alreadyTriggered.has(rule.id)) continue;
+    const q = quoteFor(rule.ticker);
+    if (!q) continue;
+    const hit =
+      rule.cond === 'above'
+        ? q.price >= rule.price
+        : rule.cond === 'below'
+          ? q.price <= rule.price
+          : Math.abs(q.changePct) >= rule.price;
+    if (hit) fresh.push({ ruleId: rule.id, ticker: rule.ticker, cond: rule.cond, price: rule.price, date, at });
+  }
+  return fresh;
+}
+
 export function isTriggeredAlert(v: unknown): v is TriggeredAlert {
   if (typeof v !== 'object' || v === null) return false;
   const t = v as Record<string, unknown>;

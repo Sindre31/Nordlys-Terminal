@@ -30,6 +30,16 @@ describe('computePortfolio', () => {
     const positions: Position[] = [{ ticker: 'LMT', qty: 10, theme: 'Defence', fallbackNok: 40000 }];
     const port = computePortfolio(live, positions, 0);
     expect(port.totalValue).toBeCloseTo(10 * 500 * 10, 5);
+    expect(port.usdnok).toBe(10);
+  });
+
+  it('does NOT fabricate an FX rate: a USD holding with no live USD/NOK falls back to its NOK cost basis', () => {
+    // USD quote present, but the USD/NOK rate has not loaded yet.
+    const live: QuoteMap = { 'LMT': q(500, 0, 'USD') };
+    const positions: Position[] = [{ ticker: 'LMT', qty: 10, theme: 'Defence', fallbackNok: 40000 }];
+    const port = computePortfolio(live, positions, 0);
+    expect(port.usdnok).toBeNull();
+    expect(port.totalValue).toBeCloseTo(40000, 5); // cost basis, not 10*500*<madeup rate>
   });
 
   it('falls back to fallbackNok when no live quote exists yet', () => {

@@ -198,3 +198,16 @@ button:disabled {
 .skip-link:focus {
   top: 0 !important;
 }
+
+/* Visible keyboard focus for all interactive elements (mouse focus stays unstyled via
+   :focus-visible). The app uses many role="button" spans, so target those too. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #6FA8FF;
+  outline-offset: 2px;
+  border-radius: 4px;
+}

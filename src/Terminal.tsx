@@ -46,60 +46,37 @@ import {
   loadValidArray,
   isAlertRule,
   isTriggeredAlert,
+  evaluateAlerts,
   type AlertRule,
   type TriggeredAlert,
 } from './storage';
-import { css, chgEl } from './ui';
+import {
+  css,
+  chgEl,
+  deltaBadge,
+  factorBar,
+  factorVal,
+  spark,
+  sentBadge,
+  convBadge,
+  askTag,
+  dot,
+  actBadge,
+  upside,
+  rating,
+  hbar,
+  contribBar,
+  ppVal,
+  ccyPill,
+  fxRisk,
+  side,
+  scImpact,
+} from './ui';
 
 // The AI portfolio's inception is today — every holding's "held since" reads as today
 // until a real rebalance changes it, rather than a fabricated pre-dated history.
 function todayLabel(): string {
   return new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function deltaBadge(v: number | null | undefined) {
-  if (v === null || v === undefined)
-    return React.createElement('span', { className: 'mono', style: { color: '#9AA1AC', fontSize: 10 } }, '—');
-  const up = v >= 0;
-  return React.createElement(
-    'span',
-    { className: 'mono', style: { color: up ? '#3DBB84' : '#E4655E', fontSize: 10 } },
-    (up ? '+' : '') + v.toFixed(1) + '%',
-  );
-}
-
-function factorBar(val: number) {
-  const up = val >= 0;
-  const pct = Math.min((Math.abs(val) / 25) * 50, 50);
-  return React.createElement(
-    'div',
-    { style: { position: 'relative', height: 8, background: '#1E1834', borderRadius: 4 } },
-    React.createElement('div', {
-      style: { position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1, background: '#3A3358' },
-    }),
-    React.createElement('div', {
-      style: {
-        position: 'absolute',
-        top: 0,
-        bottom: 0,
-        borderRadius: 4,
-        background: up ? '#3DBB84' : '#E4655E',
-        left: up ? '50%' : 50 - pct + '%',
-        width: pct + '%',
-      },
-    }),
-  );
-}
-function factorVal(val: number) {
-  const up = val >= 0;
-  return React.createElement(
-    'span',
-    {
-      className: 'mono',
-      style: { fontSize: 12.5, fontWeight: 600, color: up ? '#3DBB84' : '#E4655E', width: 34, display: 'inline-block', textAlign: 'right' },
-    },
-    (up ? '+' : '') + val,
-  );
 }
 
 function stocks() {
@@ -129,112 +106,6 @@ function stocks() {
     ORK: mk('Orkla'),
     STB: mk('Storebrand'),
   } as Record<string, StockDisplay>;
-}
-
-function spark(up: boolean) {
-  const pts = up ? '0,16 16,14 32,17 48,10 64,8 80,4' : '0,7 16,9 32,8 48,13 64,15 80,18';
-  const color = up ? '#3DBB84' : '#E4655E';
-  return React.createElement(
-    'svg',
-    { viewBox: '0 0 80 22', style: { width: 80, height: 22 } },
-    React.createElement('polyline', { points: pts, fill: 'none', stroke: color, strokeWidth: 1.6 }),
-  );
-}
-
-function sentBadge(kind: string) {
-  const map: Record<string, [string, string]> = { Bullish: ['#3DBB84', '#12271F'], Bearish: ['#E4655E', '#2A1917'], Watch: ['#C79A3D', '#2A2314'] };
-  const c = map[kind] || map.Watch;
-  return React.createElement(
-    'span',
-    { className: 'mono', style: { color: c[0], background: c[1], borderRadius: 4, padding: '2px 7px', fontSize: 9.5, letterSpacing: '0.04em', textTransform: 'uppercase' } },
-    kind,
-  );
-}
-function convBadge(kind: string) {
-  const map: Record<string, [string, string]> = { High: ['#B79BFF', '#211B33'], Medium: ['#8A929E', '#1B1F25'], Trim: ['#E4655E', '#2A1917'] };
-  const c = map[kind] || map.Medium;
-  return React.createElement(
-    'span',
-    { className: 'mono', style: { color: c[0], background: c[1], borderRadius: 20, padding: '3px 10px', fontSize: 10.5 } },
-    kind,
-  );
-}
-function askTag(ok: boolean) {
-  if (ok) return null;
-  return React.createElement(
-    'span',
-    { className: 'mono', style: { color: '#C79A3D', border: '1px solid #4A3E1E', background: '#211B0E', borderRadius: 20, padding: '1px 7px', fontSize: 9, letterSpacing: '0.03em', whiteSpace: 'nowrap' } },
-    '◔ Outside ASK',
-  );
-}
-function dot(dir: number) {
-  return React.createElement('span', {
-    style: { display: 'block', width: 8, height: 8, borderRadius: 2, background: dir > 0 ? '#3DBB84' : dir < 0 ? '#E4655E' : '#7C5CFF' },
-  });
-}
-function actBadge(kind: string) {
-  const map: Record<string, [string, string]> = {
-    BUY: ['#3DBB84', '#12271F'], ADD: ['#3DBB84', '#12271F'], HOLD: ['#8A929E', '#1B1F25'], TRIM: ['#C79A3D', '#2A2314'], SELL: ['#E4655E', '#2A1917'],
-  };
-  const c = map[kind] || map.HOLD;
-  return React.createElement(
-    'span',
-    { className: 'mono', style: { color: c[0], background: c[1], borderRadius: 5, padding: '4px 0', fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', width: 58, textAlign: 'center', display: 'inline-block' } },
-    kind,
-  );
-}
-function upside(v: number) {
-  if (!v) return React.createElement('span', { className: 'mono', style: { fontSize: 12.5, color: '#7C8492' } }, '—');
-  const up = v >= 0;
-  return React.createElement('span', { className: 'mono', style: { fontSize: 12.5, color: up ? '#3DBB84' : '#E4655E' } }, (up ? '+' : '') + v.toFixed(1) + '%');
-}
-function rating(kind: string) {
-  const map: Record<string, [string, string]> = { Buy: ['#3DBB84', '#12271F'], Sell: ['#E4655E', '#2A1917'], Hold: ['#8A929E', '#1B1F25'], Neutral: ['#8A929E', '#1B1F25'] };
-  const c = map[kind] || map.Hold;
-  return React.createElement(
-    'span',
-    { className: 'mono', style: { color: c[0], background: c[1], borderRadius: 5, padding: '3px 0', fontSize: 10.5, fontWeight: 600, width: 64, textAlign: 'center', display: 'inline-block' } },
-    kind,
-  );
-}
-function hbar(pct: number, color: string) {
-  return React.createElement('div', { style: { height: '100%', width: pct + '%', background: color, borderRadius: 5 } });
-}
-function contribBar(v: number, max: number) {
-  const up = v >= 0;
-  const pct = Math.min((Math.abs(v) / max) * 50, 50);
-  const line = React.createElement('div', { key: 'l', style: { position: 'absolute', top: 0, bottom: 0, left: '50%', width: 1, background: '#3A414B' } });
-  const seg = React.createElement('div', {
-    key: 's',
-    style: { position: 'absolute', top: 0, bottom: 0, borderRadius: 3, background: up ? '#3DBB84' : '#E4655E', left: up ? '50%' : 50 - pct + '%', width: pct + '%' },
-  });
-  return React.createElement('div', { style: { position: 'absolute', inset: 0 } }, line, seg);
-}
-function ppVal(v: number) {
-  const up = v >= 0;
-  return React.createElement('span', { className: 'mono', style: { fontSize: 12.5, fontWeight: 600, color: up ? '#3DBB84' : '#E4655E' } }, (up ? '+' : '') + v.toFixed(1));
-}
-function ccyPill(ccy: string) {
-  const map: Record<string, [string, string]> = { NOK: ['#9AA1AC', '#1B1F25'], USD: ['#7FB0D8', '#12222E'], Mixed: ['#B79BFF', '#211B33'] };
-  const c = map[ccy] || map.NOK;
-  return React.createElement('span', { className: 'mono', style: { color: c[0], background: c[1], borderRadius: 5, padding: '2px 0', fontSize: 10.5, width: 52, textAlign: 'center', display: 'inline-block' } }, ccy);
-}
-function fxRisk(kind: string) {
-  const map: Record<string, [string, string]> = { None: ['#7C8492', '#1B1F25'], Medium: ['#C79A3D', '#2A2314'], High: ['#E4655E', '#2A1917'] };
-  const c = map[kind] || map.None;
-  return React.createElement('span', { className: 'mono', style: { color: c[0], background: c[1], borderRadius: 20, padding: '2px 0', fontSize: 10, width: 64, textAlign: 'center', display: 'inline-block' } }, kind);
-}
-function side(kind: string) {
-  const buy = kind === 'BUY';
-  return React.createElement(
-    'span',
-    { className: 'mono', style: { color: buy ? '#3DBB84' : '#E4655E', background: buy ? '#12271F' : '#2A1917', borderRadius: 4, padding: '2px 0', fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', width: 48, textAlign: 'center', display: 'inline-block' } },
-    kind,
-  );
-}
-function scImpact(v: number) {
-  const up = v >= 0;
-  return React.createElement('span', { className: 'mono', style: { fontSize: 13.5, fontWeight: 600, color: up ? '#3DBB84' : '#E4655E' } }, (up ? '+' : '') + v.toFixed(1) + '%');
 }
 
 type Tab = 'markets' | 'watchlist' | 'news' | 'reports' | 'alerts' | 'ai' | 'risk' | 'fx' | 'attr' | 'ins' | 'bt';
@@ -416,20 +287,15 @@ export default function Terminal() {
     const nowLabel = new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
     setTriggeredToday((prev) => {
       const already = new Set(prev.filter((t) => t.date === today).map((t) => t.ruleId));
-      const fresh: TriggeredAlert[] = [];
-      for (const rule of alertRules) {
-        if (already.has(rule.id)) continue;
-        // Read live quote inline (not via a render-scoped helper) so `live` is the effect's
-        // only external dependency and the hook deps are honest.
-        const y = STOCK_YAHOO[rule.ticker];
-        const q = y ? live[y] : undefined;
-        if (!q) continue;
-        const hit =
-          rule.cond === 'above' ? q.price >= rule.price
-          : rule.cond === 'below' ? q.price <= rule.price
-          : Math.abs(q.changePct) >= rule.price;
-        if (hit) fresh.push({ ruleId: rule.id, ticker: rule.ticker, cond: rule.cond, price: rule.price, date: today, at: nowLabel });
-      }
+      // Detection logic is the pure, unit-tested evaluateAlerts (storage.ts). `live` is read inline
+      // so it's the effect's only external dependency.
+      const fresh = evaluateAlerts(
+        alertRules,
+        (ticker) => { const y = STOCK_YAHOO[ticker]; return y ? live[y] : undefined; },
+        already,
+        today,
+        nowLabel,
+      );
       return fresh.length ? [...fresh, ...prev].slice(0, 50) : prev;
     });
   }, [live, alertRules]);
@@ -450,12 +316,13 @@ export default function Terminal() {
   };
   const CASH_FRACTION: Record<RiskLevel, number> = { conservative: 0.15, balanced: 0.065, aggressive: 0.02 };
   const TOTAL_AUM = 1_300_000;
-  const usdnokRate = live['USDNOK=X']?.price ?? 10.61;
+  const usdnokRate = live['USDNOK=X']?.price ?? null; // no fabricated FX; null until USD/NOK loads
   const priceNokFor = (t: string): number | null => {
     const y = STOCK_YAHOO[t];
     const q = y ? live[y] : undefined;
     if (!q) return null;
-    return q.currency === 'USD' ? q.price * usdnokRate : q.price;
+    if (q.currency === 'USD') return usdnokRate != null ? q.price * usdnokRate : null;
+    return q.price;
   };
   const nativePriceFor = (t: string): number | null => {
     const y = STOCK_YAHOO[t];
@@ -561,10 +428,12 @@ export default function Terminal() {
     // Price the holdings inline from `live` (so `live` is an honest dependency). Wait until every
     // held name has a live quote before snapshotting, otherwise the recorded NAV would fall back
     // to cost basis and ignore the day's real market move.
-    const usdnok = live['USDNOK=X']?.price ?? 10.61;
+    const usdnok = live['USDNOK=X']?.price ?? null; // no fabricated FX; wait for the real rate
     const priced = ledger.holdings.map((h) => {
       const q = live[STOCK_YAHOO[h.ticker]];
-      return q ? (q.currency === 'USD' ? q.price * usdnok : q.price) : null;
+      if (!q) return null;
+      if (q.currency === 'USD') return usdnok != null ? q.price * usdnok : null;
+      return q.price;
     });
     if (ledger.holdings.length > 0 && priced.some((p) => p == null)) return;
     const daysElapsed = last ? Math.max(1, Math.round((new Date(todayISO).getTime() - new Date(last.date).getTime()) / 86400000)) : 0;
@@ -1701,26 +1570,26 @@ export default function Terminal() {
         )}
         <button onClick={addWatchSymbol} style={css("border:1px solid #2D5BD0; background:#2D5BD0; color:#fff; font-size:12.5px; font-weight:500; padding:7px 14px; border-radius:7px; cursor:pointer; font-family:inherit;")}>＋ Add symbol</button>
       </div>
-      <div style={css("border:1px solid #23272E; border-radius:10px; overflow:hidden; background:#101317;")}>
-        <div className="mono" style={css("display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; padding:10px 18px; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
-          <span>Symbol</span><span style={css("text-align:right;")}>Last</span><span style={css("text-align:right;")}>Chg %</span><span style={css("text-align:right;")}>Bid</span><span style={css("text-align:right;")}>Ask</span><span style={css("text-align:right;")}>Volume</span><span style={css("text-align:right;")}>Day range</span><span style={css("text-align:right;")}>7d</span>
+      <div role="table" aria-label="Watchlist" aria-rowcount={watchFull.length} style={css("border:1px solid #23272E; border-radius:10px; overflow:hidden; background:#101317;")}>
+        <div role="row" className="mono" style={css("display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; padding:10px 18px; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
+          <span role="columnheader">Symbol</span><span role="columnheader" style={css("text-align:right;")}>Last</span><span role="columnheader" style={css("text-align:right;")}>Chg %</span><span role="columnheader" style={css("text-align:right;")}>Bid</span><span role="columnheader" style={css("text-align:right;")}>Ask</span><span role="columnheader" style={css("text-align:right;")}>Volume</span><span role="columnheader" style={css("text-align:right;")}>Day range</span><span role="columnheader" style={css("text-align:right;")}>7d</span>
         </div>
         {watchFull.length === 0 && (
           <div style={css("padding:28px 18px; text-align:center; font-size:13px; color:#5B626C;")}>Your watchlist is empty. Click “＋ Add symbol” to start tracking instruments.</div>
         )}
         {watchFull.map((r, i) => (<React.Fragment key={i}>
-          <div onClick={editWatch ? undefined : r.open} style={css(`display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-b">
-            <div><span className="mono" style={css("font-weight:600; font-size:13.5px; color:#F2F4F7;")}>{r.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{r.name}</span></div>
-            <span className="mono" style={css("text-align:right; font-size:13.5px; color:#EDEFF2;")}>{r.last}</span>
-            <span className="mono" style={css("text-align:right; font-size:13px;")}>{r.chg}</span>
-            <span className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.bid}</span>
-            <span className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.ask}</span>
-            <span className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.vol}</span>
-            <span className="mono" style={css("text-align:right; font-size:12.5px; color:#7C8492;")}>{r.range}</span>
+          <div role="row" onClick={editWatch ? undefined : r.open} style={css(`display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-b">
+            <div role="cell"><span className="mono" style={css("font-weight:600; font-size:13.5px; color:#F2F4F7;")}>{r.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{r.name}</span></div>
+            <span role="cell" className="mono" style={css("text-align:right; font-size:13.5px; color:#EDEFF2;")}>{r.last}</span>
+            <span role="cell" className="mono" style={css("text-align:right; font-size:13px;")}>{r.chg}</span>
+            <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.bid}</span>
+            <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.ask}</span>
+            <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.vol}</span>
+            <span role="cell" className="mono" style={css("text-align:right; font-size:12.5px; color:#7C8492;")}>{r.range}</span>
             {editWatch ? (
-              <span onClick={(e) => { e.stopPropagation(); removeWatchSymbol(r.ticker); }} className="mono" style={css("justify-self:end; color:#E4655E; cursor:pointer; font-size:12.5px;")}>✕ Remove</span>
+              <span role="cell" onClick={(e) => { e.stopPropagation(); removeWatchSymbol(r.ticker); }} className="mono" style={css("justify-self:end; color:#E4655E; cursor:pointer; font-size:12.5px;")}>✕ Remove</span>
             ) : (
-              <span style={css("justify-self:end;")}>{r.sparkEl}</span>
+              <span role="cell" style={css("justify-self:end;")}>{r.sparkEl}</span>
             )}
           </div>
         </React.Fragment>))}
@@ -2127,9 +1996,9 @@ export default function Terminal() {
             </div>
           </div>
           
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div className="mono" style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; padding:10px 18px; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
-              <span>Holding</span><span style={css("text-align:right;")}>Alloc</span><span style={css("text-align:right;")}>Value</span><span style={css("text-align:right;")}>Today</span><span style={css("text-align:center;")}>Conviction</span><span>AI driver · factor z-scores</span>
+          <div role="table" aria-label="AI portfolio holdings" style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
+            <div role="row" className="mono" style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; padding:10px 18px; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
+              <span role="columnheader">Holding</span><span role="columnheader" style={css("text-align:right;")}>Alloc</span><span role="columnheader" style={css("text-align:right;")}>Value</span><span role="columnheader" style={css("text-align:right;")}>Today</span><span role="columnheader" style={css("text-align:center;")}>Conviction</span><span role="columnheader">AI driver · factor z-scores</span>
             </div>
             <div style={css("display:flex; align-items:center; gap:8px; padding:7px 18px; border-bottom:1px solid #191D23; background:#0C0E11;")}>
               <span style={css("font-size:11px; color:#6B727C; line-height:1.4;")}>Each holding shows the cross-sectional factor z-scores behind its selection — <span className="mono" style={css("color:#8A929E;")}>Mom</span> (6-month momentum), <span className="mono" style={css("color:#8A929E;")}>Trend</span> (13/52-week), <span className="mono" style={css("color:#8A929E;")}>Low-vol</span> (inverted realized vol) and <span className="mono" style={css("color:#8A929E;")}>Val/Qual</span> (P/B inverted + ROE, today's snapshot). Higher is more favourable; “—” means the factor wasn't computable.</span>
@@ -2139,15 +2008,18 @@ export default function Terminal() {
               <span style={css("font-size:11px; color:#6B727C;")}>Non-EEA holdings (e.g. US shares) can't sit in an aksjesparekonto — booked on your Nordnet investeringskonto instead.</span>
             </div>
             {aiHoldings.map((h, i) => (<React.Fragment key={i}>
-              <div onClick={h.open} style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
-                <div style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:13px; color:#F2F4F7;")}>{h.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{h.name}</span> {h.askEl}<div style={css("font-size:10px; color:#5B626C; margin-top:1px;")}>{h.type}</div></div>
-                <span className="mono" style={css("text-align:right; font-size:13px; color:#EDEFF2;")}>{h.alloc}</span>
-                <span className="mono" style={css("text-align:right; font-size:12.5px; color:#9AA1AC;")}>{h.value}</span>
-                <span style={css("text-align:right;")}>{h.chgEl}</span>
-                <span style={css("text-align:center;")}>{h.convEl}</span>
-                <div style={css("min-width:0;")}><span style={css("font-size:11.5px; color:#9AA1AC;")}>{h.driver}</span>{factorChips(h.factorZ)}</div>
+              <div role="row" onClick={h.open} style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+                <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:13px; color:#F2F4F7;")}>{h.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{h.name}</span> {h.askEl}<div style={css("font-size:10px; color:#5B626C; margin-top:1px;")}>{h.type}</div></div>
+                <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#EDEFF2;")}>{h.alloc}</span>
+                <span role="cell" className="mono" style={css("text-align:right; font-size:12.5px; color:#9AA1AC;")}>{h.value}</span>
+                <span role="cell" style={css("text-align:right;")}>{h.chgEl}</span>
+                <span role="cell" style={css("text-align:center;")}>{h.convEl}</span>
+                <div role="cell" style={css("min-width:0;")}><span style={css("font-size:11.5px; color:#9AA1AC;")}>{h.driver}</span>{factorChips(h.factorZ)}</div>
               </div>
             </React.Fragment>))}
+            {aiHoldings.length === 0 && (
+              <div style={css("padding:26px 18px; text-align:center; font-size:12.5px; color:#5B626C; line-height:1.5;")}>{quantModel.error ? `Factor model unavailable: ${quantModel.error}` : quantModel.ready ? 'No names currently clear the model’s bar — the book is sitting in cash.' : 'Loading the factor model on real weekly prices…'}</div>
+            )}
           </div>
           
           <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
@@ -2701,14 +2573,20 @@ export default function Terminal() {
       <div className="mono" style={css("display:flex; gap:3px; font-size:11px; margin-bottom:10px;")}>
         {TF_DETAIL.map(([label, rng]) => tfSpan(label, rng, detailRange, setDetailRange, 'padding:4px 10px;'))}
       </div>
-      <svg viewBox="0 0 660 240" preserveAspectRatio="none" style={css("width:100%; height:240px; display:block;")}>
-        <defs><linearGradient id="dtgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3DBB84" stopOpacity="0.26"/><stop offset="100%" stopColor="#3DBB84" stopOpacity="0"/></linearGradient></defs>
+      <svg viewBox="0 0 660 240" preserveAspectRatio="none" style={css("width:100%; height:240px; display:block;")} role="img" aria-label={`${sName} price chart`}>
+        <defs>
+          <linearGradient id="dtgradUp" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3DBB84" stopOpacity="0.26"/><stop offset="100%" stopColor="#3DBB84" stopOpacity="0"/></linearGradient>
+          <linearGradient id="dtgradDown" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#E4655E" stopOpacity="0.26"/><stop offset="100%" stopColor="#E4655E" stopOpacity="0"/></linearGradient>
+        </defs>
         <line x1="0" y1="60" x2="660" y2="60" stroke="#20242B" strokeWidth="1"/>
         <line x1="0" y1="120" x2="660" y2="120" stroke="#20242B" strokeWidth="1"/>
         <line x1="0" y1="180" x2="660" y2="180" stroke="#20242B" strokeWidth="1"/>
-        <path d={detailPath ? detailPath.area : "M0,180 L44,172 L88,186 L132,150 L176,162 L220,128 L264,140 L308,104 L352,120 L396,88 L440,102 L484,66 L528,80 L572,52 L616,62 L660,38 L660,240 L0,240 Z"} fill="url(#dtgrad)"/>
-        <polyline points={detailPath ? detailPath.line : "0,180 44,172 88,186 132,150 176,162 220,128 264,140 308,104 352,120 396,88 440,102 484,66 528,80 572,52 616,62 660,38"} fill="none" stroke={detailPath && !detailPath.up ? '#E4655E' : '#3DBB84'} strokeWidth="2.2"/>
-        {!detailPath && <circle cx="660" cy="38" r="4" fill="#3DBB84"/>}
+        {detailPath ? (<>
+          <path d={detailPath.area} fill={`url(#${detailPath.up ? 'dtgradUp' : 'dtgradDown'})`}/>
+          <polyline points={detailPath.line} fill="none" stroke={detailPath.up ? '#3DBB84' : '#E4655E'} strokeWidth="2.2"/>
+        </>) : (
+          <text x="330" y="120" textAnchor="middle" fill="#5B626C" fontSize="12" className="mono">Loading price history…</text>
+        )}
       </svg>
     </div>
     <div style={css("padding:12px 26px 6px;")}>

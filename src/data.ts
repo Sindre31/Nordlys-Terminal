@@ -384,7 +384,7 @@ export interface Portfolio {
   sinceInception: number;
   cashNok: number;
   cashPct: number;
-  usdnok: number;
+  usdnok: number | null;
   themeAlloc: { label: string; valueNok: number; pct: number }[];
   allocOf: (ticker: string) => number;
   valueOf: (ticker: string) => number;
@@ -396,7 +396,10 @@ export interface Portfolio {
 // position with no persisted cost basis defaults to today's value, so a brand
 // new holding starts at 0% since inception rather than a fabricated return.
 export function computePortfolio(live: QuoteMap, positions: Position[], cashNok: number): Portfolio {
-  const usdnok = live['USDNOK=X']?.price ?? 10.61;
+  // No fabricated FX: until the live USD/NOK rate loads, a USD holding can't be honestly valued in
+  // NOK, so it falls back to its persisted NOK cost basis (a real number) rather than a made-up
+  // spot rate. usdnok is null until the rate is live.
+  const usdnok = live['USDNOK=X']?.price ?? null;
   const quoteOf = (t: string): Quote | undefined => {
     const y = STOCK_YAHOO[t];
     return y ? live[y] : undefined;
@@ -404,7 +407,8 @@ export function computePortfolio(live: QuoteMap, positions: Position[], cashNok:
   const priceNok = (t: string): number | null => {
     const q = quoteOf(t);
     if (!q) return null;
-    return q.currency === 'USD' ? q.price * usdnok : q.price;
+    if (q.currency === 'USD') return usdnok != null ? q.price * usdnok : null;
+    return q.price;
   };
   const rows: PortfolioRow[] = positions.map((p) => {
     const pn = priceNok(p.ticker);

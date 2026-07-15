@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { isAlertRule, isTriggeredAlert, loadValidArray, saveLS, loadLS } from './storage';
+import { isAlertRule, isTriggeredAlert, loadValidArray, saveLS, loadLS, evaluateAlerts, type AlertRule } from './storage';
 
 // Minimal in-memory localStorage so these pure helpers can be tested in the node environment.
 beforeAll(() => {
@@ -79,5 +79,44 @@ describe('saveLS', () => {
     // Would crash the app (and trip the error boundary) without the internal try/catch.
     expect(() => saveLS('any', { big: 'payload' })).not.toThrow();
     localStorage.setItem = original;
+  });
+});
+
+describe('evaluateAlerts', () => {
+  const rules: AlertRule[] = [
+    { id: 1, ticker: 'EQNR', cond: 'above', price: 320 },
+    { id: 2, ticker: 'DNB', cond: 'below', price: 200 },
+    { id: 3, ticker: 'MOWI', cond: 'pct', price: 5 },
+    { id: 4, ticker: 'KOG', cond: 'above', price: 1000 },
+  ];
+  const quotes: Record<string, { price: number; changePct: number }> = {
+    EQNR: { price: 325, changePct: 1.6 }, // above 320 → fires
+    DNB: { price: 195, changePct: -2.5 }, // below 200 → fires
+    MOWI: { price: 190, changePct: -6.2 }, // |−6.2| ≥ 5 → fires
+    KOG: { price: 980, changePct: 0.2 }, // below 1000 → no fire
+  };
+  const quoteFor = (t: string) => quotes[t];
+
+  it('fires above/below/pct rules that cross, skips those that do not', () => {
+    const fresh = evaluateAlerts(rules, quoteFor, new Set(), '2026-07-15', '14:02');
+    expect(fresh.map((f) => f.ruleId).sort()).toEqual([1, 2, 3]);
+    expect(fresh[0]).toMatchObject({ ticker: 'EQNR', cond: 'above', date: '2026-07-15', at: '14:02' });
+  });
+
+  it('does not re-fire a rule already triggered today', () => {
+    const fresh = evaluateAlerts(rules, quoteFor, new Set([1, 2]), '2026-07-15', '14:02');
+    expect(fresh.map((f) => f.ruleId)).toEqual([3]);
+  });
+
+  it('skips rules whose ticker has no live quote (never a fabricated trigger)', () => {
+    const fresh = evaluateAlerts(rules, () => undefined, new Set(), '2026-07-15', '14:02');
+    expect(fresh).toEqual([]);
+  });
+
+  it('treats the pct condition as an absolute daily move (up or down)', () => {
+    const r: AlertRule[] = [{ id: 9, ticker: 'X', cond: 'pct', price: 3 }];
+    expect(evaluateAlerts(r, () => ({ price: 1, changePct: 3.1 }), new Set(), 'd', 't')).toHaveLength(1);
+    expect(evaluateAlerts(r, () => ({ price: 1, changePct: -3.1 }), new Set(), 'd', 't')).toHaveLength(1);
+    expect(evaluateAlerts(r, () => ({ price: 1, changePct: 2.9 }), new Set(), 'd', 't')).toHaveLength(0);
   });
 });
