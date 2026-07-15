@@ -95,16 +95,6 @@ export function factorVal(val: number) {
   );
 }
 
-export function spark(up: boolean) {
-  const pts = up ? '0,16 16,14 32,17 48,10 64,8 80,4' : '0,7 16,9 32,8 48,13 64,15 80,18';
-  const color = up ? '#3DBB84' : '#E4655E';
-  return React.createElement(
-    'svg',
-    { viewBox: '0 0 80 22', style: { width: 80, height: 22 } },
-    React.createElement('polyline', { points: pts, fill: 'none', stroke: color, strokeWidth: 1.6 }),
-  );
-}
-
 export function sentBadge(kind: string) {
   const map: Record<string, [string, string]> = { Bullish: ['#3DBB84', '#12271F'], Bearish: ['#E4655E', '#2A1917'], Watch: ['#C79A3D', '#2A2314'] };
   const c = map[kind] || map.Watch;

@@ -7,6 +7,7 @@ import {
   useQuotes,
   useNews,
   useChart,
+  useSparklines,
   useMacro,
   useOsloClock,
   useDividends,
@@ -69,7 +70,6 @@ import {
   deltaBadge,
   factorBar,
   factorVal,
-  spark,
   sentBadge,
   convBadge,
   askTag,
@@ -130,6 +130,19 @@ const TAB_TITLES: Record<Tab, string> = {
   markets: 'Markets', watchlist: 'Watchlist', news: 'News', reports: 'Reports', alerts: 'Alerts',
   ai: 'AI Portfolio', risk: 'Risk', fx: 'Currency', attr: 'Attribution', ins: 'Insider', bt: 'Backtest',
 };
+
+// Real watchlist mini-sparkline: draws the actual trailing-week close series (from /api/chart) as an
+// 80×22 polyline, coloured green/red by week-over-week direction. Returns null when there isn't
+// enough real history yet, so nothing fabricated is ever shown in its place.
+function realSpark(closes: number[]): React.ReactNode {
+  const p = buildChartPath(closes, 80, 22, 3, 3);
+  if (!p) return null;
+  return (
+    <svg viewBox="0 0 80 22" style={{ width: 80, height: 22 }} aria-hidden="true">
+      <polyline points={p.line} fill="none" stroke={p.up ? '#3DBB84' : '#E4655E'} strokeWidth={1.4} />
+    </svg>
+  );
+}
 
 export default function Terminal() {
   // Restore the last-viewed tab and risk level so a refresh doesn't dump the user back to Markets /
@@ -256,6 +269,9 @@ export default function Terminal() {
   };
 
   const order = watchTickers;
+  // Real trailing-week close series for each watchlist symbol, keyed by Yahoo symbol, for the
+  // "7d" mini-sparklines below (replaces the old fixed synthetic curve).
+  const sparkSeries = useSparklines(order.map((sym) => STOCK_YAHOO[sym] || sym));
   const addWatchSymbol = () => {
     const input = window.prompt(`Add a ticker to your watchlist (available: ${Object.keys(base).join(', ')}):`);
     if (!input) return;
@@ -670,7 +686,7 @@ export default function Terminal() {
     ticker: sym, name: S[sym].name, last: S[sym].last,
     chg: chgEl(S[sym].chg, 13),
     bid: '—', ask: '—', vol: S[sym].vol, range: S[sym].range,
-    sparkEl: S[sym].chg == null ? null : spark(S[sym].chg >= 0),
+    sparkEl: realSpark(sparkSeries[STOCK_YAHOO[sym] || sym] || []),
     open: open(sym),
   }));
 
