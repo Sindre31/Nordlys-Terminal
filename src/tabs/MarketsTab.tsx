@@ -26,7 +26,7 @@ export interface MarketsTabProps {
   setIdxRange: React.Dispatch<React.SetStateAction<string>>;
   osebx: Quote | undefined;
   idxPath: ChartPath | null;
-  sectorTiles: { name: string; pct: number }[];
+  sectorTiles: { name: string; pct: number | null }[];
   gainers: MoverRow[];
   losers: MoverRow[];
   order: string[];
@@ -39,8 +39,10 @@ export interface MarketsTabProps {
 // Oslo Børs index-benchmark timeframes.
 const TF_INDEX: [string, string][] = [['1D', '1d'], ['1W', '5d'], ['1M', '1mo'], ['1Y', '1y']];
 
-// Maps a sector's daily change to a heat-tile colour set. Pure.
-const sectorTile = (pct: number): { bg: string; label: string; val: string } => {
+// Maps a sector's daily change to a heat-tile colour set. Pure. A null pct (no live quote yet)
+// renders a neutral, muted tile rather than implying a real move.
+const sectorTile = (pct: number | null): { bg: string; label: string; val: string } => {
+  if (pct == null) return { bg: '#15181D', label: '#5B626C', val: '#7C8492' };
   if (pct >= 1) return { bg: '#12583C', label: '#C8E6D8', val: '#fff' };
   if (pct >= 0.5) return { bg: '#134C36', label: '#C8E6D8', val: '#fff' };
   if (pct >= 0) return { bg: '#1B2C27', label: '#9FB4AB', val: '#DCEBE3' };
@@ -119,7 +121,7 @@ export default function MarketsTab({
             {sectorTiles.map((s, i) => {
               const c = sectorTile(s.pct);
               return (
-                <div key={i} style={css(`background:${c.bg}; border-radius:5px; padding:9px 10px;`)}><div style={css(`font-size:11px; color:${c.label};`)}>{s.name}</div><div className="mono" style={css(`font-size:14px; font-weight:600; color:${c.val};`)}>{pctText(s.pct)}</div></div>
+                <div key={i} style={css(`background:${c.bg}; border-radius:5px; padding:9px 10px;`)}><div style={css(`font-size:11px; color:${c.label};`)}>{s.name}</div><div className="mono" style={css(`font-size:14px; font-weight:600; color:${c.val};`)}>{s.pct == null ? '—' : pctText(s.pct)}</div></div>
               );
             })}
           </div>

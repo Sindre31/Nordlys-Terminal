@@ -1035,7 +1035,9 @@ export default function Terminal() {
     : t.cond === 'below' ? `fell below ${fmtNum(t.price, 2)}`
     : `moved ±${t.price.toFixed(1)}% today`;
 
-  // Sector moves derived from live constituent quotes (falls back to designed values).
+  // Sector day-moves derived purely from live constituent quotes. Only sectors with tracked
+  // constituents are shown, and a sector whose members have no live quote yet renders "—"
+  // (pct=null) instead of a fabricated number — no designed placeholder values.
   const SECTOR_MEMBERS: Record<string, string[]> = {
     Energy: ['EQNR', 'AKRBP'],
     Materials: ['NHY', 'YAR'],
@@ -1044,17 +1046,9 @@ export default function Terminal() {
     Industrials: ['KOG'],
     Telecom: ['TEL'],
   };
-  const SECTOR_STATIC: Record<string, number> = {
-    Energy: 1.41, Materials: 0.92, Financials: 0.34, Seafood: -0.88,
-    Industrials: 0.58, Telecom: -0.41, Shipping: 0.12, Tech: 1.06,
-  };
-  const sectorTiles = ['Energy', 'Materials', 'Financials', 'Seafood', 'Industrials', 'Telecom', 'Shipping', 'Tech'].map((name) => {
-    const members = SECTOR_MEMBERS[name];
-    let pct = SECTOR_STATIC[name];
-    if (members) {
-      const vals = members.map((t) => liveChg(t, NaN)).filter((v) => !Number.isNaN(v));
-      if (vals.length) pct = vals.reduce((a, b) => a + b, 0) / vals.length;
-    }
+  const sectorTiles = Object.entries(SECTOR_MEMBERS).map(([name, members]) => {
+    const vals = members.map((t) => liveChg(t, NaN)).filter((v) => !Number.isNaN(v));
+    const pct = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     return { name, pct };
   });
 
