@@ -1,5 +1,5 @@
 import React from 'react';
-import { css } from '../ui';
+import { css, rowKeys } from '../ui';
 
 // Reports & earnings tab. Presentational; calendar, report card and analyst rows are computed in Terminal.
 export interface CalendarRow {
@@ -114,7 +114,7 @@ export default function ReportsTab({
           <div style={css("padding:22px 18px; font-size:12.5px; color:#5B626C; line-height:1.5;")}>Awaiting analyst consensus from the live feed (Yahoo). No broker figures are shown until it responds.</div>
         )}
         {analystDisplay.map((ar, i) => (<React.Fragment key={i}>
-          <div role="row" onClick={ar.open} style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+          <div role="row" onClick={ar.open} {...rowKeys(ar.open, `Open ${ar.ticker} details`)} style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
             <span role="cell" style={css("font-size:12.5px; color:#DDE1E7;")}>{ar.broker}</span>
             <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{ar.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{ar.name}</span></div>
             <span role="cell" style={css("text-align:center;")}>{ar.ratingEl}</span>

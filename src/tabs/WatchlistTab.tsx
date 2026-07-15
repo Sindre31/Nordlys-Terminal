@@ -1,5 +1,5 @@
 import React from 'react';
-import { css } from '../ui';
+import { css, rowKeys } from '../ui';
 
 // Watchlist tab. Presentational; rows and mutations are supplied by Terminal.
 export interface WatchRow {
@@ -42,7 +42,7 @@ export default function WatchlistTab({ watchFull, editWatch, setEditWatch, addWa
           <div style={css("padding:28px 18px; text-align:center; font-size:13px; color:#5B626C;")}>Your watchlist is empty. Click “＋ Add symbol” to start tracking instruments.</div>
         )}
         {watchFull.map((r, i) => (<React.Fragment key={i}>
-          <div role="row" onClick={editWatch ? undefined : r.open} style={css(`display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-b">
+          <div role="row" onClick={editWatch ? undefined : r.open} {...rowKeys(editWatch ? undefined : r.open, `Open ${r.ticker} details`)} style={css(`display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-b">
             <div role="cell"><span className="mono" style={css("font-weight:600; font-size:13.5px; color:#F2F4F7;")}>{r.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{r.name}</span></div>
             <span role="cell" className="mono" style={css("text-align:right; font-size:13.5px; color:#EDEFF2;")}>{r.last}</span>
             <span role="cell" className="mono" style={css("text-align:right; font-size:13px;")}>{r.chg}</span>

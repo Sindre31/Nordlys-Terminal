@@ -1,5 +1,5 @@
 import React from 'react';
-import { css, pctColor, pctText } from '../ui';
+import { css, pctColor, pctText, rowKeys } from '../ui';
 import { fmtNum } from '../data';
 import type { Portfolio } from '../data';
 import type { PortfolioLedger } from '../ledger';
@@ -163,7 +163,7 @@ export default function AiPortfolioTab({
           <div style={css("padding:16px 18px; font-size:12.5px; color:#5B626C;")}>{quantModel.ready ? 'No changes recommended — current holdings already match the model.' : 'Loading signals…'}</div>
         )}
         {aiRecos.map((rc, i) => (<React.Fragment key={i}>
-          <div onClick={rc.open} style={css("display:grid; grid-template-columns:74px 2fr 1.3fr 0.9fr 2.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+          <div onClick={rc.open} {...rowKeys(rc.open, `Open ${rc.ticker} details`)} style={css("display:grid; grid-template-columns:74px 2fr 1.3fr 0.9fr 2.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
             <span>{rc.actEl}</span>
             <div style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:13px; color:#F2F4F7;")}>{rc.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{rc.name}</span> {rc.askEl}</div>
             <span className="mono" style={css("text-align:right; font-size:12.5px; color:#EDEFF2;")}>{rc.nowTarget}</span>
@@ -262,7 +262,7 @@ export default function AiPortfolioTab({
               <span style={css("font-size:11px; color:#6B727C;")}>Non-EEA holdings (e.g. US shares) can't sit in an aksjesparekonto — booked on your Nordnet investeringskonto instead.</span>
             </div>
             {aiHoldings.map((h, i) => (<React.Fragment key={i}>
-              <div role="row" onClick={h.open} style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+              <div role="row" onClick={h.open} {...rowKeys(h.open, `Open ${h.ticker} details`)} style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
                 <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:13px; color:#F2F4F7;")}>{h.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{h.name}</span> {h.askEl}<div style={css("font-size:10px; color:#5B626C; margin-top:1px;")}>{h.type}</div></div>
                 <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#EDEFF2;")}>{h.alloc}</span>
                 <span role="cell" className="mono" style={css("text-align:right; font-size:12.5px; color:#9AA1AC;")}>{h.value}</span>
@@ -360,7 +360,7 @@ export default function AiPortfolioTab({
               <div style={css("padding:8px 16px 12px; font-size:11.5px; color:#5B626C; line-height:1.5;")}>No confirmed upcoming earnings dates for held names yet.</div>
             )}
             {holdingReportsDisplay.map((r, i) => (<React.Fragment key={i}>
-              <div onClick={r.open} style={css("display:grid; grid-template-columns:56px 1fr auto; gap:10px; align-items:center; padding:9px 16px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+              <div onClick={r.open} {...rowKeys(r.open, `Open ${r.ticker} details`)} style={css("display:grid; grid-template-columns:56px 1fr auto; gap:10px; align-items:center; padding:9px 16px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
                 <span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{r.ticker}</span>
                 <span style={css("font-size:11.5px; color:#DDE1E7;")}>{r.period}</span>
                 <span className="mono" style={css("font-size:11px; color:#9AA1AC;")}>{r.date}</span>

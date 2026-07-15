@@ -1,5 +1,5 @@
 import React from 'react';
-import { css } from '../ui';
+import { css, rowKeys } from '../ui';
 
 // Performance-attribution tab. Presentational only; all values computed in Terminal.
 export interface ContribRow {
@@ -65,7 +65,7 @@ export default function AttributionTab({
             <span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#5B626C;")}>weight × return, pp</span>
           </div>
           {contribHoldings.map((h, i) => (<React.Fragment key={i}>
-            <div onClick={h.open} style={css("display:grid; grid-template-columns:112px 1fr 52px; gap:12px; align-items:center; padding:9px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+            <div onClick={h.open} {...rowKeys(h.open, `Open ${h.ticker} details`)} style={css("display:grid; grid-template-columns:112px 1fr 52px; gap:12px; align-items:center; padding:9px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
               <span className="mono" style={css("font-size:12.5px; color:#F2F4F7;")}><span style={css("font-weight:600;")}>{h.ticker}</span></span>
               <div style={css("height:10px; background:#1A1E24; border-radius:5px; position:relative; overflow:hidden;")}>{h.barEl}</div>
               <span style={css("text-align:right;")}>{h.valEl}</span>

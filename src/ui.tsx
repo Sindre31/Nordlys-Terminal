@@ -4,6 +4,26 @@ import React from 'react';
 // unit-tested and reused, and so Terminal.tsx exports only its component (keeps React Fast Refresh
 // happy). These are pure — no component state.
 
+// Makes a mouse-clickable data row keyboard-operable: focusable, activated by Enter/Space, and
+// (given a label) announced to screen readers as an action. Returns nothing when there's no
+// handler (e.g. a row whose click is disabled), so the row stays inert and out of the tab order.
+export function rowKeys(
+  open: (() => void) | undefined,
+  label?: string,
+): { tabIndex?: number; 'aria-label'?: string; onKeyDown?: (e: React.KeyboardEvent) => void } {
+  if (!open) return {};
+  return {
+    tabIndex: 0,
+    ...(label ? { 'aria-label': label } : {}),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    },
+  };
+}
+
 // Parses a "prop:val; prop:val" string into a React style object. Lets the dense inline styling
 // read like CSS without a styling dependency.
 export function css(str: string): React.CSSProperties {

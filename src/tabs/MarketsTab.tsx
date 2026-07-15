@@ -1,5 +1,5 @@
 import React from 'react';
-import { css, pctColor, pctText } from '../ui';
+import { css, pctColor, pctText, rowKeys } from '../ui';
 import { fmtNum } from '../data';
 import type { Quote, ChartPath } from '../data';
 import type { TriggeredAlert } from '../storage';
@@ -71,7 +71,7 @@ export default function MarketsTab({
             <div style={css("padding:16px 14px; font-size:12px; color:#5B626C; line-height:1.5;")}>Your watchlist is empty. Use “+ Add symbol” below to start tracking instruments.</div>
           )}
           {watchlist.map((row, i) => (<React.Fragment key={i}>
-            <div onClick={editWatch ? undefined : row.open} style={css(`display:grid; grid-template-columns:52px 1fr 66px 62px; gap:6px; align-items:center; padding:8px 14px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-a">
+            <div onClick={editWatch ? undefined : row.open} {...rowKeys(editWatch ? undefined : row.open, `Open ${row.ticker} details`)} style={css(`display:grid; grid-template-columns:52px 1fr 66px 62px; gap:6px; align-items:center; padding:8px 14px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-a">
               <span className="mono" style={css("font-weight:600; color:#F2F4F7; font-size:12.5px;")}>{row.ticker}</span>
               <span style={css("color:#7C8492; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;")}>{row.name}</span>
               {editWatch ? (
@@ -132,7 +132,7 @@ export default function MarketsTab({
             <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
               {gainers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>{order.length === 0 ? 'Add symbols to your watchlist' : 'Loading live prices…'}</div>}
               {gainers.map((g, i) => (
-                <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
+                <div key={i} onClick={open(g.sym)} {...rowKeys(open(g.sym), `Open ${g.sym} details`)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
               ))}
             </div>
           </div>
@@ -141,7 +141,7 @@ export default function MarketsTab({
             <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
               {losers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>{order.length === 0 ? 'Add symbols to your watchlist' : 'Loading live prices…'}</div>}
               {losers.map((g, i) => (
-                <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
+                <div key={i} onClick={open(g.sym)} {...rowKeys(open(g.sym), `Open ${g.sym} details`)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
               ))}
             </div>
           </div>

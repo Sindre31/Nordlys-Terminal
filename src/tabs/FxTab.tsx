@@ -1,6 +1,6 @@
 import React from 'react';
 import { fmtNum } from '../data';
-import { css, pctColor, pctText } from '../ui';
+import { css, pctColor, pctText, rowKeys } from '../ui';
 
 // Currency-exposure tab. Presentational only — every value is computed in Terminal and passed in,
 // so the rendered output is identical to the previous inline block.
@@ -90,7 +90,7 @@ export default function FxTab({ clock, foreignPct, usdPct, ccyTotals, fxCurrency
             <span role="columnheader">Holding</span><span role="columnheader" style={css("text-align:center;")}>Ccy</span><span role="columnheader" style={css("text-align:right;")}>Weight</span><span role="columnheader" style={css("text-align:right;")}>Value (NOK)</span><span role="columnheader" style={css("text-align:right;")}>FX risk</span>
           </div>
           {fxHoldings.map((h, i) => (<React.Fragment key={i}>
-            <div role="row" onClick={h.open} style={css("display:grid; grid-template-columns:1.8fr 0.8fr 0.8fr 1.1fr 90px; gap:10px; align-items:center; padding:11px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+            <div role="row" onClick={h.open} {...rowKeys(h.open, `Open ${h.ticker} details`)} style={css("display:grid; grid-template-columns:1.8fr 0.8fr 0.8fr 1.1fr 90px; gap:10px; align-items:center; padding:11px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
               <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{h.ticker}</span> <span style={css("font-size:11.5px; color:#7C8492;")}>{h.name}</span></div>
               <span role="cell" style={css("text-align:center;")}>{h.ccyEl}</span>
               <span role="cell" className="mono" style={css("text-align:right; font-size:12px; color:#EDEFF2;")}>{h.weight}</span>
