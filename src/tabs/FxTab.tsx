@@ -26,6 +26,10 @@ export interface FxTabProps {
 }
 
 export default function FxTab({ clock, foreignPct, usdPct, ccyTotals, fxCurrencyRows, fxRates, fxHoldings }: FxTabProps) {
+  // First-order USD/NOK sensitivity: a 5% currency move revalues the USD-denominated slice of the
+  // book by 5%, so portfolio impact ≈ (USD weight) × 5%. Derived from the real live USD exposure —
+  // not a hardcoded figure.
+  const fxSensPct = (usdPct / 100) * 5;
   return (
     <div data-screen-label="Currency" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
@@ -70,8 +74,8 @@ export default function FxTab({ clock, foreignPct, usdPct, ccyTotals, fxCurrency
             <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:6px;")}>FX sensitivity</div>
             <p style={css("font-size:12px; color:#8A929E; margin:0 0 12px; line-height:1.5;")}>Estimated portfolio impact from a move in USD/NOK, holdings unchanged.</p>
             <div className="mono" style={css("display:grid; grid-template-columns:1fr 1fr; gap:10px;")}>
-              <div style={css("border:1px solid #23272E; border-radius:9px; padding:11px 13px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD/NOK +5%</div><div style={css("font-size:16px; color:#3DBB84; margin-top:4px;")}>+1.15%</div></div>
-              <div style={css("border:1px solid #23272E; border-radius:9px; padding:11px 13px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD/NOK −5%</div><div style={css("font-size:16px; color:#E4655E; margin-top:4px;")}>−1.15%</div></div>
+              <div style={css("border:1px solid #23272E; border-radius:9px; padding:11px 13px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD/NOK +5%</div><div style={css("font-size:16px; color:#3DBB84; margin-top:4px;")}>+{fxSensPct.toFixed(2)}%</div></div>
+              <div style={css("border:1px solid #23272E; border-radius:9px; padding:11px 13px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD/NOK −5%</div><div style={css("font-size:16px; color:#E4655E; margin-top:4px;")}>−{fxSensPct.toFixed(2)}%</div></div>
             </div>
           </div>
         </div>

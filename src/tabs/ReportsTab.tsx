@@ -80,11 +80,13 @@ export default function ReportsTab({
             </div>
             <div style={css("margin-top:18px; border-top:1px solid #191D23; padding-top:14px;")}>
               <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:8px;")}>Revenue trend (annual)</div>
-              <svg viewBox="0 0 420 90" preserveAspectRatio="none" style={css("width:100%; height:90px; display:block;")}>
-                {revBars
-                  ? revBars.map((b, i) => <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} fill={b.fill} />)
-                  : <><rect x="6" y="46" width="38" height="44" fill="#22303A"/><rect x="54" y="40" width="38" height="50" fill="#22303A"/><rect x="102" y="44" width="38" height="46" fill="#22303A"/><rect x="150" y="34" width="38" height="56" fill="#22303A"/><rect x="198" y="30" width="38" height="60" fill="#2D4A5C"/><rect x="246" y="26" width="38" height="64" fill="#2D4A5C"/><rect x="294" y="20" width="38" height="70" fill="#2F6E90"/><rect x="342" y="14" width="38" height="76" fill="#3DBB84"/></>}
-              </svg>
+              {revBars ? (
+                <svg viewBox="0 0 420 90" preserveAspectRatio="none" style={css("width:100%; height:90px; display:block;")}>
+                  {revBars.map((b, i) => <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} fill={b.fill} />)}
+                </svg>
+              ) : (
+                <div style={css("height:90px; display:flex; align-items:center; justify-content:center; font-size:11.5px; color:#5B626C; text-align:center;")}>Awaiting annual revenue history from the fundamentals feed.</div>
+              )}
             </div>
             <div style={css("display:flex; gap:8px; margin-top:16px;")}>
               <button style={css("border:1px solid #2A2F37; background:#191D24; color:#DDE1E7; font-size:12px; padding:7px 13px; border-radius:7px; cursor:pointer; font-family:inherit;")}>Open full report (PDF)</button>

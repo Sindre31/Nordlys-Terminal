@@ -102,15 +102,16 @@ export default function MarketsTab({
             <span className="mono" style={css(`font-size:13px; color:${osebx ? pctColor(osebx.changePct) : '#8A929E'};`)}>{osebx ? `${osebx.change >= 0 ? '+' : ''}${fmtNum(osebx.change, 2)} (${pctText(osebx.changePct)})` : '—'}</span>
           </div>
         </div>
-        <div style={css("padding:6px 6px 0;")}>
+        <div style={css("padding:6px 6px 0; position:relative;")}>
           <svg viewBox="0 0 700 210" preserveAspectRatio="none" style={css("width:100%; height:210px; display:block;")}>
             <defs><linearGradient id="mkgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3DBB84" stopOpacity="0.28"/><stop offset="100%" stopColor="#3DBB84" stopOpacity="0"/></linearGradient></defs>
             <line x1="0" y1="52" x2="700" y2="52" stroke="#20242B" strokeWidth="1"/>
             <line x1="0" y1="105" x2="700" y2="105" stroke="#20242B" strokeWidth="1"/>
             <line x1="0" y1="158" x2="700" y2="158" stroke="#20242B" strokeWidth="1"/>
-            <path d={idxPath ? idxPath.area : "M0,150 L46,140 L93,156 L140,120 L186,132 L233,101 L280,112 L326,80 L373,96 L420,70 L466,86 L513,54 L560,66 L606,44 L653,52 L700,30 L700,210 L0,210 Z"} fill="url(#mkgrad)"/>
-            <polyline points={idxPath ? idxPath.line : "0,150 46,140 93,156 140,120 186,132 233,101 280,112 326,80 373,96 420,70 466,86 513,54 560,66 606,44 653,52 700,30"} fill="none" stroke={idxPath && !idxPath.up ? '#E4655E' : '#3DBB84'} strokeWidth="2"/>
+            {idxPath && <path d={idxPath.area} fill="url(#mkgrad)"/>}
+            {idxPath && <polyline points={idxPath.line} fill="none" stroke={!idxPath.up ? '#E4655E' : '#3DBB84'} strokeWidth="2"/>}
           </svg>
+          {!idxPath && <div style={css("position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; color:#5B626C;")}>Loading OSEBX history…</div>}
         </div>
         <div style={css("padding:12px 18px 8px; border-top:1px solid #23272E;")}>
           <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Sectors today</span>
