@@ -650,6 +650,9 @@ export default function Terminal() {
   const benchRet = riskStats.benchReturn ?? 0;
 
   // Explanatory factor bars, computed from the same live aggregates.
+  // Only real, live-derived factors. Until enough held names have live quotes and analyst
+  // coverage (convDataReady), the breakdown is empty and the score shows "—" — no invented
+  // narrative or placeholder factor values stand in for the model's reasoning.
   const realFactors = convDataReady
     ? [
         { label: 'Analyst upside', why: `Avg target ${avgUpside >= 0 ? '+' : ''}${avgUpside.toFixed(0)}% across held names`, val: Math.round(clamp(avgUpside / 20, -1, 1) * 24) },
@@ -659,14 +662,7 @@ export default function Terminal() {
         { label: 'Volatility & drawdown', why: riskStats.annVol != null ? `Realised vol ${riskStats.annVol.toFixed(0)}% annualised` : 'Realised volatility', val: riskStats.annVol != null ? -Math.round(clamp((riskStats.annVol - 18) / 12, 0, 1) * 12) : -7 },
         { label: 'Concentration', why: `Top holding ${port.rows.length ? (Math.max(...port.rows.map((r) => port.totalValue > 0 ? r.valueNok / port.totalValue * 100 : 0))).toFixed(0) : '—'}% of book`, val: -Math.round(clamp((Math.max(0, ...port.rows.map((r) => port.totalValue > 0 ? r.valueNok / port.totalValue : 0)) - 0.12) / 0.1, 0, 1) * 8) },
       ]
-    : [
-        { label: 'Geopolitical risk premium', why: 'Mideast shipping risk + NATO rearmament lift energy & defence', val: 22 },
-        { label: 'Earnings momentum', why: 'Q2 beats trend positive across held names', val: 12 },
-        { label: 'Rates & macro', why: 'Norges Bank signals autumn cut — supportive', val: 14 },
-        { label: 'Market breadth', why: 'Broad participation in the OSEBX advance', val: 9 },
-        { label: 'Trade & tariffs', why: 'US metals-tariff threat is an unresolved overhang', val: -8 },
-        { label: 'Volatility & drawdown', why: 'Realised vol elevated vs 3-month average', val: -7 },
-      ];
+    : [];
   const stC = stanceCfg[risk] || stanceCfg.balanced;
   const rawNet = convDataReady ? Math.round(netSignal * 58) : realFactors.reduce((s, f) => s + f.val, 0);
   const convNetNum = Math.round(rawNet * stC.k);
@@ -853,8 +849,8 @@ export default function Terminal() {
   // Conviction display values come from the real engine above; the stance
   // supplies the cash target, label and narrative note.
   const rc = {
-    score: `${convScoreNum} / 100`,
-    net: `${convNetNum >= 0 ? '+' : ''}${convNetNum}`,
+    score: convDataReady ? `${convScoreNum} / 100` : '—',
+    net: convDataReady ? `${convNetNum >= 0 ? '+' : ''}${convNetNum}` : '—',
     stance: stC.stance, cash: stC.cash, tilt: stC.tilt, note: stC.note,
   };
   const segBase = 'padding:5px 13px; border-radius:6px; font-size:12px; cursor:pointer; color:#8A929E;';
@@ -1483,7 +1479,7 @@ export default function Terminal() {
     {isAlerts && <AlertsTab alertRules={alertRules} triggeredToday={triggeredToday} todayKey={todayKey} removeAlertRule={removeAlertRule} base={base} newAlertSym={newAlertSym} setNewAlertSym={setNewAlertSym} newAlertCond={newAlertCond} setNewAlertCond={setNewAlertCond} newAlertPrice={newAlertPrice} setNewAlertPrice={setNewAlertPrice} createAlertRule={createAlertRule} />}
 
     
-    {isAI && <AiPortfolioTab ledger={ledger} port={port} quantModel={quantModel} pendingRebalance={pendingRebalance} resetPortfolio={resetPortfolio} runRebalance={runRebalance} clickable={clickable} factorChips={factorChips} themeColors={THEME_COLORS} todayLabelStr={todayLabel()} risk={risk} riskConsStyle={riskConsStyle} riskBalStyle={riskBalStyle} riskAggStyle={riskAggStyle} riskNote={riskNote} setRiskCons={setRiskCons} setRiskBal={setRiskBal} setRiskAgg={setRiskAgg} sinceIncStr={sinceIncStr} showConv={showConv} toggleConv={toggleConv} convToggleLabel={convToggleLabel} convScore={convScore} convTilt={convTilt} convNet={convNet} convStance={convStance} convFactors={convFactors} aiRecos={aiRecos} navChart={navChart} rebalEvents={rebalEvents} rbOpen={rbOpen} rbSel={rbSel} aiHoldings={aiHoldings} exportPortfolioCsv={exportPortfolioCsv} portfolioLog={portfolioLog} aiSignals={aiSignals} aiActions={aiActions} divsLabel={divsLabel} divsDisplay={divsDisplay} holdingReportsDisplay={holdingReportsDisplay} />}
+    {isAI && <AiPortfolioTab ledger={ledger} port={port} quantModel={quantModel} pendingRebalance={pendingRebalance} resetPortfolio={resetPortfolio} runRebalance={runRebalance} clickable={clickable} factorChips={factorChips} themeColors={THEME_COLORS} todayLabelStr={todayLabel()} risk={risk} riskConsStyle={riskConsStyle} riskBalStyle={riskBalStyle} riskAggStyle={riskAggStyle} riskNote={riskNote} setRiskCons={setRiskCons} setRiskBal={setRiskBal} setRiskAgg={setRiskAgg} sinceIncStr={sinceIncStr} showConv={showConv} toggleConv={toggleConv} convToggleLabel={convToggleLabel} convReady={convDataReady} convScore={convScore} convTilt={convTilt} convNet={convNet} convStance={convStance} convFactors={convFactors} aiRecos={aiRecos} navChart={navChart} rebalEvents={rebalEvents} rbOpen={rbOpen} rbSel={rbSel} aiHoldings={aiHoldings} exportPortfolioCsv={exportPortfolioCsv} portfolioLog={portfolioLog} aiSignals={aiSignals} aiActions={aiActions} divsLabel={divsLabel} divsDisplay={divsDisplay} holdingReportsDisplay={holdingReportsDisplay} />}
 
     
     {isRisk && <RiskTab portTotalValue={port.totalValue} clockTime={clock.time} rBeta={rBeta} rVol={rVol} rVolNote={rVolNote} rVar={rVar} rVarNok={rVarNok} rMdd={rMdd} rSharpe={rSharpe} sectorExp={sectorExp} geoRows={geoRows} askPct={askPct} outsideAskPct={outsideAskPct} concExp={concExp} top5Pct={top5Pct} effBeta={effBeta} scenarios={scenarios} />}

@@ -44,6 +44,7 @@ export interface AiPortfolioTabProps {
   showConv: boolean;
   toggleConv: () => void;
   convToggleLabel: string;
+  convReady: boolean;
   convScore: string;
   convTilt: string;
   convNet: string;
@@ -67,7 +68,7 @@ export interface AiPortfolioTabProps {
 export default function AiPortfolioTab({
   ledger, port, quantModel, pendingRebalance, resetPortfolio, runRebalance, clickable, factorChips, themeColors, todayLabelStr,
   risk, riskConsStyle, riskBalStyle, riskAggStyle, riskNote, setRiskCons, setRiskBal, setRiskAgg,
-  sinceIncStr, showConv, toggleConv, convToggleLabel, convScore, convTilt, convNet, convStance, convFactors,
+  sinceIncStr, showConv, toggleConv, convToggleLabel, convReady, convScore, convTilt, convNet, convStance, convFactors,
   aiRecos, navChart, rebalEvents, rbOpen, rbSel, aiHoldings, exportPortfolioCsv, portfolioLog,
   aiSignals, aiActions, divsLabel, divsDisplay, holdingReportsDisplay,
 }: AiPortfolioTabProps) {
@@ -120,11 +121,12 @@ export default function AiPortfolioTab({
       {showConv && (<>
       <div style={css("border:1px solid #3B2F63; border-radius:12px; background:#120E22; padding:18px 20px; margin-bottom:16px;")}>
         <div style={css("display:flex; align-items:baseline; gap:12px; margin-bottom:4px;")}>
-          <span style={css("font-size:14px; font-weight:600; color:#F2F4F7;")}>Why conviction is {convScore}</span>
+          <span style={css("font-size:14px; font-weight:600; color:#F2F4F7;")}>{convReady ? `Why conviction is ${convScore}` : 'Conviction breakdown'}</span>
           <span style={css("font-size:12px; color:#8A929E;")}>Weighted signal factors, rebased to a 0–100 risk-appetite score</span>
           <div style={css("flex:1;")}></div>
           <span onClick={toggleConv} style={css("font-size:11px; color:#B79BFF; cursor:pointer;")}>Hide ✕</span>
         </div>
+        {convReady ? (<>
         <div style={css("display:grid; grid-template-columns:1fr 1fr; column-gap:36px; row-gap:2px; margin-top:12px;")}>
           {convFactors.map((f, i) => (<React.Fragment key={i}>
             <div style={css("display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid #1E1834;")}>
@@ -140,6 +142,9 @@ export default function AiPortfolioTab({
           <div style={css("flex:1;")}></div>
           <span className="mono" style={css("font-size:13px; color:#B79BFF; font-weight:600;")}>= {convScore} · {convStance}</span>
         </div>
+        </>) : (
+          <div style={css("margin-top:12px; font-size:12.5px; color:#8A929E; line-height:1.55;")}>The conviction score builds from live signals — analyst upside &amp; breadth, price momentum vs OSEBX, the rates/CPI backdrop, realised volatility and concentration. It stays “—” until enough held names have live quotes and analyst coverage (at least three rated names). No placeholder factors or narrative are shown in the meantime.</div>
+        )}
       </div>
       </>)}
 
