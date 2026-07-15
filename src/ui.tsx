@@ -39,6 +39,13 @@ export function chgEl(chg: number | null, size?: number): React.ReactElement {
   );
 }
 
+// ---- Small pure formatters (shared by Terminal and the per-tab components) ----
+
+export const pctColor = (v: number) => (v >= 0 ? '#3DBB84' : '#E4655E');
+export const pctText = (v: number) => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+export const fmtK = (v: number) => 'NOK ' + Math.round(v / 1000) + 'k';
+export const pctStr = (v: number, dec = 1) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(dec)}%`;
+
 // ---- Badge / bar / pill element helpers (pure; moved out of Terminal.tsx) ----
 
 export function deltaBadge(v: number | null | undefined) {
