@@ -1211,6 +1211,31 @@ export default function Terminal() {
   const rSharpe = riskStats.sharpe != null ? riskStats.sharpe.toFixed(2) : '—';
   const rVolNote = riskStats.annVol != null ? (riskStats.annVol > 20 ? 'elevated' : riskStats.annVol > 12 ? 'moderate' : 'low') : rLoaded ? '' : 'awaiting 1y history';
 
+  // Real factor tilt: the book's average factor z-score across held names (from the same model
+  // that picks the portfolio), mapped to a plain label. "—" per factor until its z-scores load —
+  // no fabricated fixed tilt.
+  const factorTilt = (() => {
+    const held = port.rows.map((r) => r.ticker);
+    const fzOf = (t: string) => quantModel.signals.find((s) => s.ticker === t)?.factorZ;
+    const avgZ = (pick: (fz: FactorZ) => number | null) => {
+      const vals = held.map((t) => { const fz = fzOf(t); return fz ? pick(fz) : null; }).filter((v): v is number => v != null);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    };
+    const label = (z: number | null): { text: string; color: string } =>
+      z == null ? { text: '—', color: '#5B626C' }
+        : z >= 0.5 ? { text: 'High', color: '#3DBB84' }
+        : z >= 0.15 ? { text: 'Above avg', color: '#3DBB84' }
+        : z > -0.15 ? { text: 'Neutral', color: '#9AA1AC' }
+        : z > -0.5 ? { text: 'Below avg', color: '#C79A3D' }
+        : { text: 'Low', color: '#E4655E' };
+    return [
+      { name: 'Momentum', ...label(avgZ((f) => f.momentum)) },
+      { name: 'Trend', ...label(avgZ((f) => f.trend)) },
+      { name: 'Low volatility', ...label(avgZ((f) => f.lowVol)) },
+      { name: 'Value & quality', ...label(avgZ((f) => f.valueQuality)) },
+    ];
+  })();
+
   // ---- Currency exposure derived from the live portfolio ----
   const ccyTotals: Record<string, number> = { NOK: port.cashNok, USD: 0, Mixed: 0 };
   port.rows.forEach((r) => {
@@ -1482,7 +1507,7 @@ export default function Terminal() {
     {isAI && <AiPortfolioTab ledger={ledger} port={port} quantModel={quantModel} pendingRebalance={pendingRebalance} resetPortfolio={resetPortfolio} runRebalance={runRebalance} clickable={clickable} factorChips={factorChips} themeColors={THEME_COLORS} todayLabelStr={todayLabel()} risk={risk} riskConsStyle={riskConsStyle} riskBalStyle={riskBalStyle} riskAggStyle={riskAggStyle} riskNote={riskNote} setRiskCons={setRiskCons} setRiskBal={setRiskBal} setRiskAgg={setRiskAgg} sinceIncStr={sinceIncStr} showConv={showConv} toggleConv={toggleConv} convToggleLabel={convToggleLabel} convReady={convDataReady} convScore={convScore} convTilt={convTilt} convNet={convNet} convStance={convStance} convFactors={convFactors} aiRecos={aiRecos} navChart={navChart} rebalEvents={rebalEvents} rbOpen={rbOpen} rbSel={rbSel} aiHoldings={aiHoldings} exportPortfolioCsv={exportPortfolioCsv} portfolioLog={portfolioLog} aiSignals={aiSignals} aiActions={aiActions} divsLabel={divsLabel} divsDisplay={divsDisplay} holdingReportsDisplay={holdingReportsDisplay} />}
 
     
-    {isRisk && <RiskTab portTotalValue={port.totalValue} clockTime={clock.time} rBeta={rBeta} rVol={rVol} rVolNote={rVolNote} rVar={rVar} rVarNok={rVarNok} rMdd={rMdd} rSharpe={rSharpe} sectorExp={sectorExp} geoRows={geoRows} askPct={askPct} outsideAskPct={outsideAskPct} concExp={concExp} top5Pct={top5Pct} effBeta={effBeta} scenarios={scenarios} />}
+    {isRisk && <RiskTab portTotalValue={port.totalValue} clockTime={clock.time} rBeta={rBeta} rVol={rVol} rVolNote={rVolNote} rVar={rVar} rVarNok={rVarNok} rMdd={rMdd} rSharpe={rSharpe} sectorExp={sectorExp} geoRows={geoRows} askPct={askPct} outsideAskPct={outsideAskPct} concExp={concExp} top5Pct={top5Pct} effBeta={effBeta} scenarios={scenarios} factorTilt={factorTilt} />}
 
     
     {isFx && <FxTab clock={clock} foreignPct={foreignPct} usdPct={usdPct} ccyTotals={ccyTotals} fxCurrencyRows={fxCurrencyRows} fxRates={fxRates} fxHoldings={fxHoldings} />}

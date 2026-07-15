@@ -87,7 +87,10 @@ export default function AlertsTab({
               <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>{newAlertCond === 'pct' ? 'Daily change threshold (%)' : 'Target price'}</div>
               <input value={newAlertPrice} onChange={(e) => setNewAlertPrice(e.target.value)} placeholder={newAlertCond === 'pct' ? '3.0' : '320.00'} className="mono" style={css("width:100%; box-sizing:border-box; background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:10px 12px; font-size:13px; color:#F2F4F7; font-family:inherit;")} />
             </div>
-            <div><div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Notify via</div><div style={css("display:flex; gap:8px; font-size:12.5px; color:#DDE1E7;")}><span style={css("background:#191D24; border:1px solid #2D5BD0; border-radius:20px; padding:5px 12px;")}>✓ Push</span><span style={css("background:#191D24; border:1px solid #2A2F37; border-radius:20px; padding:5px 12px; color:#9AA1AC;")}>Email</span></div></div>
+            <div style={css("display:flex; gap:8px; align-items:flex-start; background:#12161C; border:1px solid #23272E; border-radius:8px; padding:9px 11px;")}>
+              <span style={css("color:#6FA8FF; font-size:13px; line-height:1.3;")}>ⓘ</span>
+              <div style={css("font-size:11.5px; color:#8A929E; line-height:1.45;")}>Triggered alerts show <span style={css("color:#DDE1E7;")}>in-app</span> — under “Triggered today” here and on the Markets panel — while Nordlys is open. No email or push is sent.</div>
+            </div>
             <button onClick={createAlertRule} style={css("margin-top:4px; border:none; background:#2D5BD0; color:#fff; font-size:13px; font-weight:500; padding:11px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Create alert</button>
           </div>
         </div>

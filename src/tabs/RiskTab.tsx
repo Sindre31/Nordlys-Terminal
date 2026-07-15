@@ -6,6 +6,7 @@ import { fmtNum } from '../data';
 export interface BarRow { label: string; val: string; barEl: React.ReactNode }
 export interface GeoRow { label: string; pct: number; color: string }
 export interface ScenarioRow { name: string; how: string; hit: string; impactEl: React.ReactNode }
+export interface FactorTiltRow { name: string; text: string; color: string }
 export interface RiskTabProps {
   portTotalValue: number;
   clockTime: string;
@@ -24,11 +25,12 @@ export interface RiskTabProps {
   top5Pct: number;
   effBeta: number | null;
   scenarios: ScenarioRow[];
+  factorTilt: FactorTiltRow[];
 }
 
 export default function RiskTab({
   portTotalValue, clockTime, rBeta, rVol, rVolNote, rVar, rVarNok, rMdd, rSharpe,
-  sectorExp, geoRows, askPct, outsideAskPct, concExp, top5Pct, effBeta, scenarios,
+  sectorExp, geoRows, askPct, outsideAskPct, concExp, top5Pct, effBeta, scenarios, factorTilt,
 }: RiskTabProps) {
   return (
     <div data-screen-label="Risk" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
@@ -39,11 +41,11 @@ export default function RiskTab({
 
 
       <div className="m-grid5" style={css("display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Portfolio beta</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{rBeta}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>vs OSEBX · 1y</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Ann. volatility</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>{rVol}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{rVolNote}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>1-day VaR (95%)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>{rVar}</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{rVarNok}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Max drawdown</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>{rMdd}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>1y trailing</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sharpe (1y)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{rSharpe}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>risk-adjusted</div></div>
+        <div title="Beta: how much the portfolio tends to move for each move in the OSEBX index. 1.0 = moves with the market; above 1 = more volatile than the market, below 1 = less." style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px; cursor:help;")}><div style={css("font-size:11px; color:#7C8492;")}>Portfolio beta</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{rBeta}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>vs OSEBX · 1y</div></div>
+        <div title="Annualised volatility: how much the portfolio's value swings over a year (standard deviation of daily returns, annualised). Higher = a bumpier ride." style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px; cursor:help;")}><div style={css("font-size:11px; color:#7C8492;")}>Ann. volatility</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>{rVol}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{rVolNote}</div></div>
+        <div title="Value at Risk (95%, 1 day): on a typical day, the portfolio's loss is expected to stay smaller than this on 19 days out of 20. A statistical estimate, not a worst case." style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px; cursor:help;")}><div style={css("font-size:11px; color:#7C8492;")}>1-day VaR (95%)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>{rVar}</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{rVarNok}</div></div>
+        <div title="Max drawdown: the largest peak-to-trough drop over the past year — i.e. the worst losing streak from a high to the following low." style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px; cursor:help;")}><div style={css("font-size:11px; color:#7C8492;")}>Max drawdown</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>{rMdd}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>1y trailing</div></div>
+        <div title="Sharpe ratio: return earned above the risk-free rate per unit of volatility. Higher = better return for the risk taken; below 1 is modest." style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px; cursor:help;")}><div style={css("font-size:11px; color:#7C8492;")}>Sharpe (1y)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{rSharpe}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>risk-adjusted</div></div>
       </div>
 
       <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
@@ -98,14 +100,15 @@ export default function RiskTab({
               </div>
             </React.Fragment>))}
           </div>
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:12px;")}>Factor tilt</div>
-            <div className="mono" style={css("display:grid; grid-template-columns:repeat(5,1fr); gap:8px; text-align:center;")}>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Value</div><div style={css("font-size:15px; color:#3DBB84; margin-top:3px;")}>+ High</div></div>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Momentum</div><div style={css("font-size:15px; color:#3DBB84; margin-top:3px;")}>+ High</div></div>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Size</div><div style={css("font-size:15px; color:#9AA1AC; margin-top:3px;")}>Large</div></div>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Quality</div><div style={css("font-size:15px; color:#9AA1AC; margin-top:3px;")}>Neutral</div></div>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Volatility</div><div style={css("font-size:15px; color:#C79A3D; margin-top:3px;")}>Elevated</div></div>
+          <div title="Factor tilt: the book's average exposure to each model factor, measured as the mean z-score across held names versus the tracked universe. 'High' means the holdings score well above average on that factor; 'Neutral' is around average." style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px; cursor:help;")}>
+            <div style={css("display:flex; align-items:baseline; gap:8px; margin-bottom:12px;")}>
+              <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Factor tilt</span>
+              <span style={css("font-size:10.5px; color:#5B626C;")}>avg z-score of holdings</span>
+            </div>
+            <div className="mono" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:8px; text-align:center;")}>
+              {factorTilt.map((f, i) => (
+                <div key={i}><div style={css("font-size:11px; color:#7C8492;")}>{f.name}</div><div style={css(`font-size:15px; color:${f.color}; margin-top:3px;`)}>{f.text}</div></div>
+              ))}
             </div>
           </div>
         </div>
