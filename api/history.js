@@ -134,7 +134,7 @@ export default async function handler(req, res) {
     out.benchReturn = (bcum - 1) * 100;
     out.holdingReturns = holdingReturns;
   } catch {
-    /* leave nulls; UI falls back to designed values */
+    /* leave nulls; the UI shows "—" for risk metrics rather than any fabricated value */
   }
   res.setHeader('Cache-Control', 's-maxage=1800, stale-while-revalidate=86400');
   res.status(200).json(out);

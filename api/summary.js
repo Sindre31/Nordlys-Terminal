@@ -1,6 +1,6 @@
 // Analyst consensus + earnings dates via Yahoo Finance quoteSummary.
 // Uses the free cookie+crumb handshake (no API key). Falls back to {} on error
-// so the UI keeps its designed values.
+// so the UI shows honest empty/"—" states rather than any fabricated figures.
 
 import { fetchWithTimeout, rejectNonGet } from '../lib/http.js';
 import { getCrumb } from '../lib/yahooCrumb.js';
