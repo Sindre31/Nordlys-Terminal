@@ -53,6 +53,22 @@ test.describe('Nordlys Terminal smoke', () => {
     ).toBeVisible();
   });
 
+  test('a watchlist row is keyboard-operable (Enter opens the detail)', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Watchlist', exact: true }).first().click();
+    await page.evaluate(() => localStorage.setItem('nordlys_watchlist', JSON.stringify(['EQNR'])));
+    await page.reload();
+    await page.getByRole('button', { name: 'Watchlist', exact: true }).first().click();
+    // The row exposes itself as an actionable target (aria-label) and is focusable; Enter must
+    // open the same detail dialog a mouse click would, proving keyboard parity.
+    const row = page.getByRole('row', { name: 'Open EQNR details' });
+    await expect(row).toBeVisible();
+    await row.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await assertHealthyScreen(page, 'keyboard-opened stock detail');
+  });
+
   test('opening a stock detail panel does not crash', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Watchlist', exact: true }).first().click();

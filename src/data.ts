@@ -317,6 +317,43 @@ export function useChart(symbol: string | null, range: string): number[] {
   return closes;
 }
 
+// Trailing ~1-week daily close series per symbol, for the watchlist mini-sparklines. Issues one
+// /api/chart fetch per symbol (range=5d, interval=1d ≈ a trading week). Returns a map keyed by the
+// exact symbol strings passed in; a symbol stays absent until its history actually loads, so the UI
+// shows nothing rather than a fabricated line while it's pending or if the fetch fails.
+export function useSparklines(symbols: string[], intervalMs = 900000): Record<string, number[]> {
+  const [series, setSeries] = useState<Record<string, number[]>>({});
+  const key = symbols.join(',');
+  useEffect(() => {
+    if (!key) {
+      setSeries({});
+      return;
+    }
+    let alive = true;
+    const load = async () => {
+      const syms = key.split(',');
+      const results = await Promise.all(
+        syms.map(async (sym) => {
+          const j = (await getJSON(
+            `/api/chart?symbol=${encodeURIComponent(sym)}&range=5d&interval=1d`,
+          )) as { closes?: number[] } | null;
+          return [sym, j && Array.isArray(j.closes) ? j.closes : []] as const;
+        }),
+      );
+      if (!alive) return;
+      const map: Record<string, number[]> = {};
+      for (const [sym, closes] of results) if (closes.length >= 2) map[sym] = closes;
+      setSeries(map);
+    };
+    const stop = startPolling(load, intervalMs);
+    return () => {
+      alive = false;
+      stop();
+    };
+  }, [key, intervalMs]);
+  return series;
+}
+
 // ---- Stock display row (live-or-"—") -----------------------------------------
 
 // Display shape for a stock row. `name`/`cur` are real static metadata; every market field is

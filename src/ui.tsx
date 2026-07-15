@@ -4,6 +4,26 @@ import React from 'react';
 // unit-tested and reused, and so Terminal.tsx exports only its component (keeps React Fast Refresh
 // happy). These are pure — no component state.
 
+// Makes a mouse-clickable data row keyboard-operable: focusable, activated by Enter/Space, and
+// (given a label) announced to screen readers as an action. Returns nothing when there's no
+// handler (e.g. a row whose click is disabled), so the row stays inert and out of the tab order.
+export function rowKeys(
+  open: (() => void) | undefined,
+  label?: string,
+): { tabIndex?: number; 'aria-label'?: string; onKeyDown?: (e: React.KeyboardEvent) => void } {
+  if (!open) return {};
+  return {
+    tabIndex: 0,
+    ...(label ? { 'aria-label': label } : {}),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    },
+  };
+}
+
 // Parses a "prop:val; prop:val" string into a React style object. Lets the dense inline styling
 // read like CSS without a styling dependency.
 export function css(str: string): React.CSSProperties {
@@ -92,16 +112,6 @@ export function factorVal(val: number) {
       style: { fontSize: 12.5, fontWeight: 600, color: up ? '#3DBB84' : '#E4655E', width: 34, display: 'inline-block', textAlign: 'right' },
     },
     (up ? '+' : '') + num,
-  );
-}
-
-export function spark(up: boolean) {
-  const pts = up ? '0,16 16,14 32,17 48,10 64,8 80,4' : '0,7 16,9 32,8 48,13 64,15 80,18';
-  const color = up ? '#3DBB84' : '#E4655E';
-  return React.createElement(
-    'svg',
-    { viewBox: '0 0 80 22', style: { width: 80, height: 22 } },
-    React.createElement('polyline', { points: pts, fill: 'none', stroke: color, strokeWidth: 1.6 }),
   );
 }
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { fmtNum } from '../data';
-import { css, pctColor, pctText } from '../ui';
+import { css, pctColor, pctText, rowKeys } from '../ui';
 
 // Currency-exposure tab. Presentational only — every value is computed in Terminal and passed in,
 // so the rendered output is identical to the previous inline block.
@@ -26,6 +26,10 @@ export interface FxTabProps {
 }
 
 export default function FxTab({ clock, foreignPct, usdPct, ccyTotals, fxCurrencyRows, fxRates, fxHoldings }: FxTabProps) {
+  // First-order USD/NOK sensitivity: a 5% currency move revalues the USD-denominated slice of the
+  // book by 5%, so portfolio impact ≈ (USD weight) × 5%. Derived from the real live USD exposure —
+  // not a hardcoded figure.
+  const fxSensPct = (usdPct / 100) * 5;
   return (
     <div data-screen-label="Currency" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
       <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
@@ -70,8 +74,8 @@ export default function FxTab({ clock, foreignPct, usdPct, ccyTotals, fxCurrency
             <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:6px;")}>FX sensitivity</div>
             <p style={css("font-size:12px; color:#8A929E; margin:0 0 12px; line-height:1.5;")}>Estimated portfolio impact from a move in USD/NOK, holdings unchanged.</p>
             <div className="mono" style={css("display:grid; grid-template-columns:1fr 1fr; gap:10px;")}>
-              <div style={css("border:1px solid #23272E; border-radius:9px; padding:11px 13px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD/NOK +5%</div><div style={css("font-size:16px; color:#3DBB84; margin-top:4px;")}>+1.15%</div></div>
-              <div style={css("border:1px solid #23272E; border-radius:9px; padding:11px 13px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD/NOK −5%</div><div style={css("font-size:16px; color:#E4655E; margin-top:4px;")}>−1.15%</div></div>
+              <div style={css("border:1px solid #23272E; border-radius:9px; padding:11px 13px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD/NOK +5%</div><div style={css("font-size:16px; color:#3DBB84; margin-top:4px;")}>+{fxSensPct.toFixed(2)}%</div></div>
+              <div style={css("border:1px solid #23272E; border-radius:9px; padding:11px 13px;")}><div style={css("font-size:11px; color:#7C8492;")}>USD/NOK −5%</div><div style={css("font-size:16px; color:#E4655E; margin-top:4px;")}>−{fxSensPct.toFixed(2)}%</div></div>
             </div>
           </div>
         </div>
@@ -86,7 +90,7 @@ export default function FxTab({ clock, foreignPct, usdPct, ccyTotals, fxCurrency
             <span role="columnheader">Holding</span><span role="columnheader" style={css("text-align:center;")}>Ccy</span><span role="columnheader" style={css("text-align:right;")}>Weight</span><span role="columnheader" style={css("text-align:right;")}>Value (NOK)</span><span role="columnheader" style={css("text-align:right;")}>FX risk</span>
           </div>
           {fxHoldings.map((h, i) => (<React.Fragment key={i}>
-            <div role="row" onClick={h.open} style={css("display:grid; grid-template-columns:1.8fr 0.8fr 0.8fr 1.1fr 90px; gap:10px; align-items:center; padding:11px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+            <div role="row" onClick={h.open} {...rowKeys(h.open, `Open ${h.ticker} details`)} style={css("display:grid; grid-template-columns:1.8fr 0.8fr 0.8fr 1.1fr 90px; gap:10px; align-items:center; padding:11px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
               <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{h.ticker}</span> <span style={css("font-size:11.5px; color:#7C8492;")}>{h.name}</span></div>
               <span role="cell" style={css("text-align:center;")}>{h.ccyEl}</span>
               <span role="cell" className="mono" style={css("text-align:right; font-size:12px; color:#EDEFF2;")}>{h.weight}</span>

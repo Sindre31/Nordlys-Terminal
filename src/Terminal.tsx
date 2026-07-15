@@ -7,6 +7,7 @@ import {
   useQuotes,
   useNews,
   useChart,
+  useSparklines,
   useMacro,
   useOsloClock,
   useDividends,
@@ -35,6 +36,13 @@ import FxTab from './tabs/FxTab';
 import InsiderTab from './tabs/InsiderTab';
 import AttributionTab from './tabs/AttributionTab';
 import BacktestTab from './tabs/BacktestTab';
+import NewsTab from './tabs/NewsTab';
+import WatchlistTab from './tabs/WatchlistTab';
+import ReportsTab from './tabs/ReportsTab';
+import AlertsTab from './tabs/AlertsTab';
+import RiskTab from './tabs/RiskTab';
+import MarketsTab from './tabs/MarketsTab';
+import AiPortfolioTab from './tabs/AiPortfolioTab';
 import {
   LEDGER_VERSION,
   isValidLedger,
@@ -62,7 +70,6 @@ import {
   deltaBadge,
   factorBar,
   factorVal,
-  spark,
   sentBadge,
   convBadge,
   askTag,
@@ -123,6 +130,19 @@ const TAB_TITLES: Record<Tab, string> = {
   markets: 'Markets', watchlist: 'Watchlist', news: 'News', reports: 'Reports', alerts: 'Alerts',
   ai: 'AI Portfolio', risk: 'Risk', fx: 'Currency', attr: 'Attribution', ins: 'Insider', bt: 'Backtest',
 };
+
+// Real watchlist mini-sparkline: draws the actual trailing-week close series (from /api/chart) as an
+// 80×22 polyline, coloured green/red by week-over-week direction. Returns null when there isn't
+// enough real history yet, so nothing fabricated is ever shown in its place.
+function realSpark(closes: number[]): React.ReactNode {
+  const p = buildChartPath(closes, 80, 22, 3, 3);
+  if (!p) return null;
+  return (
+    <svg viewBox="0 0 80 22" style={{ width: 80, height: 22 }} aria-hidden="true">
+      <polyline points={p.line} fill="none" stroke={p.up ? '#3DBB84' : '#E4655E'} strokeWidth={1.4} />
+    </svg>
+  );
+}
 
 export default function Terminal() {
   // Restore the last-viewed tab and risk level so a refresh doesn't dump the user back to Markets /
@@ -187,7 +207,6 @@ export default function Terminal() {
       style={css(`${pad} border-radius:5px; ${curRange === rng ? 'background:#1D2229; color:#fff;' : 'color:#8A929E;'}`)}
     >{label}</span>
   );
-  const TF_INDEX: [string, string][] = [['1D', '1d'], ['1W', '5d'], ['1M', '1mo'], ['1Y', '1y']];
   const TF_DETAIL: [string, string][] = [['1D', '1d'], ['1W', '5d'], ['1M', '1mo'], ['6M', '6mo'], ['1Y', '1y']];
   // Jump to a symbol from the header search: match an internal ticker or a company-name prefix,
   // open its detail panel, and clear the box. No-op on an unknown query.
@@ -250,6 +269,9 @@ export default function Terminal() {
   };
 
   const order = watchTickers;
+  // Real trailing-week close series for each watchlist symbol, keyed by Yahoo symbol, for the
+  // "7d" mini-sparklines below (replaces the old fixed synthetic curve).
+  const sparkSeries = useSparklines(order.map((sym) => STOCK_YAHOO[sym] || sym));
   const addWatchSymbol = () => {
     const input = window.prompt(`Add a ticker to your watchlist (available: ${Object.keys(base).join(', ')}):`);
     if (!input) return;
@@ -628,6 +650,9 @@ export default function Terminal() {
   const benchRet = riskStats.benchReturn ?? 0;
 
   // Explanatory factor bars, computed from the same live aggregates.
+  // Only real, live-derived factors. Until enough held names have live quotes and analyst
+  // coverage (convDataReady), the breakdown is empty and the score shows "—" — no invented
+  // narrative or placeholder factor values stand in for the model's reasoning.
   const realFactors = convDataReady
     ? [
         { label: 'Analyst upside', why: `Avg target ${avgUpside >= 0 ? '+' : ''}${avgUpside.toFixed(0)}% across held names`, val: Math.round(clamp(avgUpside / 20, -1, 1) * 24) },
@@ -637,14 +662,7 @@ export default function Terminal() {
         { label: 'Volatility & drawdown', why: riskStats.annVol != null ? `Realised vol ${riskStats.annVol.toFixed(0)}% annualised` : 'Realised volatility', val: riskStats.annVol != null ? -Math.round(clamp((riskStats.annVol - 18) / 12, 0, 1) * 12) : -7 },
         { label: 'Concentration', why: `Top holding ${port.rows.length ? (Math.max(...port.rows.map((r) => port.totalValue > 0 ? r.valueNok / port.totalValue * 100 : 0))).toFixed(0) : '—'}% of book`, val: -Math.round(clamp((Math.max(0, ...port.rows.map((r) => port.totalValue > 0 ? r.valueNok / port.totalValue : 0)) - 0.12) / 0.1, 0, 1) * 8) },
       ]
-    : [
-        { label: 'Geopolitical risk premium', why: 'Mideast shipping risk + NATO rearmament lift energy & defence', val: 22 },
-        { label: 'Earnings momentum', why: 'Q2 beats trend positive across held names', val: 12 },
-        { label: 'Rates & macro', why: 'Norges Bank signals autumn cut — supportive', val: 14 },
-        { label: 'Market breadth', why: 'Broad participation in the OSEBX advance', val: 9 },
-        { label: 'Trade & tariffs', why: 'US metals-tariff threat is an unresolved overhang', val: -8 },
-        { label: 'Volatility & drawdown', why: 'Realised vol elevated vs 3-month average', val: -7 },
-      ];
+    : [];
   const stC = stanceCfg[risk] || stanceCfg.balanced;
   const rawNet = convDataReady ? Math.round(netSignal * 58) : realFactors.reduce((s, f) => s + f.val, 0);
   const convNetNum = Math.round(rawNet * stC.k);
@@ -664,7 +682,7 @@ export default function Terminal() {
     ticker: sym, name: S[sym].name, last: S[sym].last,
     chg: chgEl(S[sym].chg, 13),
     bid: '—', ask: '—', vol: S[sym].vol, range: S[sym].range,
-    sparkEl: S[sym].chg == null ? null : spark(S[sym].chg >= 0),
+    sparkEl: realSpark(sparkSeries[STOCK_YAHOO[sym] || sym] || []),
     open: open(sym),
   }));
 
@@ -831,8 +849,8 @@ export default function Terminal() {
   // Conviction display values come from the real engine above; the stance
   // supplies the cash target, label and narrative note.
   const rc = {
-    score: `${convScoreNum} / 100`,
-    net: `${convNetNum >= 0 ? '+' : ''}${convNetNum}`,
+    score: convDataReady ? `${convScoreNum} / 100` : '—',
+    net: convDataReady ? `${convNetNum >= 0 ? '+' : ''}${convNetNum}` : '—',
     stance: stC.stance, cash: stC.cash, tilt: stC.tilt, note: stC.note,
   };
   const segBase = 'padding:5px 13px; border-radius:6px; font-size:12px; cursor:pointer; color:#8A929E;';
@@ -1013,7 +1031,9 @@ export default function Terminal() {
     : t.cond === 'below' ? `fell below ${fmtNum(t.price, 2)}`
     : `moved ±${t.price.toFixed(1)}% today`;
 
-  // Sector moves derived from live constituent quotes (falls back to designed values).
+  // Sector day-moves derived purely from live constituent quotes. Only sectors with tracked
+  // constituents are shown, and a sector whose members have no live quote yet renders "—"
+  // (pct=null) instead of a fabricated number — no designed placeholder values.
   const SECTOR_MEMBERS: Record<string, string[]> = {
     Energy: ['EQNR', 'AKRBP'],
     Materials: ['NHY', 'YAR'],
@@ -1022,26 +1042,11 @@ export default function Terminal() {
     Industrials: ['KOG'],
     Telecom: ['TEL'],
   };
-  const SECTOR_STATIC: Record<string, number> = {
-    Energy: 1.41, Materials: 0.92, Financials: 0.34, Seafood: -0.88,
-    Industrials: 0.58, Telecom: -0.41, Shipping: 0.12, Tech: 1.06,
-  };
-  const sectorTiles = ['Energy', 'Materials', 'Financials', 'Seafood', 'Industrials', 'Telecom', 'Shipping', 'Tech'].map((name) => {
-    const members = SECTOR_MEMBERS[name];
-    let pct = SECTOR_STATIC[name];
-    if (members) {
-      const vals = members.map((t) => liveChg(t, NaN)).filter((v) => !Number.isNaN(v));
-      if (vals.length) pct = vals.reduce((a, b) => a + b, 0) / vals.length;
-    }
+  const sectorTiles = Object.entries(SECTOR_MEMBERS).map(([name, members]) => {
+    const vals = members.map((t) => liveChg(t, NaN)).filter((v) => !Number.isNaN(v));
+    const pct = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     return { name, pct };
   });
-  const sectorTile = (pct: number): { bg: string; label: string; val: string } => {
-    if (pct >= 1) return { bg: '#12583C', label: '#C8E6D8', val: '#fff' };
-    if (pct >= 0.5) return { bg: '#134C36', label: '#C8E6D8', val: '#fff' };
-    if (pct >= 0) return { bg: '#1B2C27', label: '#9FB4AB', val: '#DCEBE3' };
-    if (pct > -0.5) return { bg: '#4A2320', label: '#EBC9C6', val: '#fff' };
-    return { bg: '#5A2A26', label: '#EBC9C6', val: '#fff' };
-  };
 
   // ---- Analyst consensus (Yahoo), falls back to the designed table ----
   const ratingFromKey = (key: string | null, mean: number | null): string => {
@@ -1459,795 +1464,25 @@ export default function Terminal() {
   <main id="main-content" className="screen-area" style={css("flex:1; position:relative; min-height:0;")}>
 
     
-    {isMarkets && (<>
-    <div data-screen-label="Markets" className="screen markets-grid" style={css("position:absolute; inset:0; display:grid; grid-template-columns:340px 1fr 356px; min-height:0;")}>
-      
-      <div style={css("border-right:1px solid #23272E; display:flex; flex-direction:column; min-height:0;")}>
-        <div style={css("display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border-bottom:1px solid #23272E;")}>
-          <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Watchlist</span>
-          <span className="mono" style={css("font-size:11px; color:#5B626C;")}>{watchlist.length} · NOK</span>
-        </div>
-        <div className="mono" style={css("display:grid; grid-template-columns:52px 1fr 66px 62px; gap:6px; padding:6px 14px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #1A1E24;")}>
-          <span>Ticker</span><span></span><span style={css("text-align:right;")}>Last</span><span style={css("text-align:right;")}>Chg</span>
-        </div>
-        <div style={css("overflow-y:auto; flex:1;")}>
-          {watchlist.length === 0 && (
-            <div style={css("padding:16px 14px; font-size:12px; color:#5B626C; line-height:1.5;")}>Your watchlist is empty. Use “+ Add symbol” below to start tracking instruments.</div>
-          )}
-          {watchlist.map((row, i) => (<React.Fragment key={i}>
-            <div onClick={editWatch ? undefined : row.open} style={css(`display:grid; grid-template-columns:52px 1fr 66px 62px; gap:6px; align-items:center; padding:8px 14px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-a">
-              <span className="mono" style={css("font-weight:600; color:#F2F4F7; font-size:12.5px;")}>{row.ticker}</span>
-              <span style={css("color:#7C8492; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;")}>{row.name}</span>
-              {editWatch ? (
-                <span onClick={(e) => { e.stopPropagation(); removeWatchSymbol(row.ticker); }} className="mono" style={css("grid-column:3 / span 2; justify-self:end; color:#E4655E; cursor:pointer; font-size:11px;")}>✕ Remove</span>
-              ) : (<>
-                <span className="mono" style={css("text-align:right; color:#EDEFF2; font-size:12.5px;")}>{row.last}</span>
-                <span className="mono" style={css("text-align:right; font-size:12px;")} >{row.chg}</span>
-              </>)}
-            </div>
-          </React.Fragment>))}
-        </div>
-        <div style={css("padding:10px 14px; border-top:1px solid #23272E; font-size:11px; color:#5B626C; display:flex; justify-content:space-between;")}>
-          <span onClick={addWatchSymbol} style={css("cursor:pointer;")}>+ Add symbol</span><span className="mono" onClick={() => setEditWatch((v) => !v)} style={css("cursor:pointer;")}>Edit</span>
-        </div>
-      </div>
-
-      
-      <div style={css("border-right:1px solid #23272E; display:flex; flex-direction:column; min-height:0; overflow-y:auto;")}>
-        <div style={css("padding:14px 18px 10px; border-bottom:1px solid #23272E;")}>
-          <div style={css("display:flex; align-items:baseline; gap:12px;")}>
-            <span style={css("font-size:16px; font-weight:600; color:#F2F4F7;")}>OSEBX</span>
-            <span style={css("font-size:12px; color:#8A929E;")}>Oslo Børs Benchmark Index</span>
-            <div style={css("flex:1;")}></div>
-            <div className="mono" style={css("display:flex; gap:3px; font-size:11px;")}>
-              {TF_INDEX.map(([label, rng]) => tfSpan(label, rng, idxRange, setIdxRange, 'padding:3px 8px;'))}
-            </div>
-          </div>
-          <div style={css("display:flex; align-items:baseline; gap:10px; margin-top:6px;")}>
-            <span className="mono" style={css("font-size:26px; font-weight:600; color:#F2F4F7;")}>{osebx ? fmtNum(osebx.price, 2) : '—'}</span>
-            <span className="mono" style={css(`font-size:13px; color:${osebx ? pctColor(osebx.changePct) : '#8A929E'};`)}>{osebx ? `${osebx.change >= 0 ? '+' : ''}${fmtNum(osebx.change, 2)} (${pctText(osebx.changePct)})` : '—'}</span>
-          </div>
-        </div>
-        <div style={css("padding:6px 6px 0;")}>
-          <svg viewBox="0 0 700 210" preserveAspectRatio="none" style={css("width:100%; height:210px; display:block;")}>
-            <defs><linearGradient id="mkgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3DBB84" stopOpacity="0.28"/><stop offset="100%" stopColor="#3DBB84" stopOpacity="0"/></linearGradient></defs>
-            <line x1="0" y1="52" x2="700" y2="52" stroke="#20242B" strokeWidth="1"/>
-            <line x1="0" y1="105" x2="700" y2="105" stroke="#20242B" strokeWidth="1"/>
-            <line x1="0" y1="158" x2="700" y2="158" stroke="#20242B" strokeWidth="1"/>
-            <path d={idxPath ? idxPath.area : "M0,150 L46,140 L93,156 L140,120 L186,132 L233,101 L280,112 L326,80 L373,96 L420,70 L466,86 L513,54 L560,66 L606,44 L653,52 L700,30 L700,210 L0,210 Z"} fill="url(#mkgrad)"/>
-            <polyline points={idxPath ? idxPath.line : "0,150 46,140 93,156 140,120 186,132 233,101 280,112 326,80 373,96 420,70 466,86 513,54 560,66 606,44 653,52 700,30"} fill="none" stroke={idxPath && !idxPath.up ? '#E4655E' : '#3DBB84'} strokeWidth="2"/>
-          </svg>
-        </div>
-        <div style={css("padding:12px 18px 8px; border-top:1px solid #23272E;")}>
-          <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Sectors today</span>
-          <div style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:9px;")}>
-            {sectorTiles.map((s, i) => {
-              const c = sectorTile(s.pct);
-              return (
-                <div key={i} style={css(`background:${c.bg}; border-radius:5px; padding:9px 10px;`)}><div style={css(`font-size:11px; color:${c.label};`)}>{s.name}</div><div className="mono" style={css(`font-size:14px; font-weight:600; color:${c.val};`)}>{pctText(s.pct)}</div></div>
-              );
-            })}
-          </div>
-        </div>
-        <div style={css("display:grid; grid-template-columns:1fr 1fr; border-top:1px solid #23272E;")}>
-          <div style={css("border-right:1px solid #23272E; padding:11px 16px;")}>
-            <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#3DBB84; font-weight:600;")}>▲ Top gainers</span>
-            <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
-              {gainers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>{order.length === 0 ? 'Add symbols to your watchlist' : 'Loading live prices…'}</div>}
-              {gainers.map((g, i) => (
-                <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
-              ))}
-            </div>
-          </div>
-          <div style={css("padding:11px 16px;")}>
-            <span style={css("font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:#E4655E; font-weight:600;")}>▼ Top losers</span>
-            <div className="mono" style={css("margin-top:8px; font-size:12px;")}>
-              {losers.length === 0 && <div style={css("color:#5B626C; font-size:11.5px;")}>{order.length === 0 ? 'Add symbols to your watchlist' : 'Loading live prices…'}</div>}
-              {losers.map((g, i) => (
-                <div key={i} onClick={open(g.sym)} style={css("display:flex; justify-content:space-between; padding:4px 0; cursor:pointer;")}><span style={css("color:#EDEFF2;")}>{g.sym}</span><span style={css(`color:${pctColor(g.chg)};`)}>{pctText(g.chg)}</span></div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      
-      <div style={css("display:flex; flex-direction:column; min-height:0;")}>
-        <div style={css("display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border-bottom:1px solid #23272E;")}>
-          <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Newsflow</span>
-          <span className="mono" style={css("font-size:11px; color:#5B626C;")}>Live</span>
-        </div>
-        <div style={css("overflow-y:auto; flex:1;")}>
-          {feedItems.length === 0 && (
-            <div style={css("padding:14px; font-size:11.5px; color:#5B626C; line-height:1.5;")}>Awaiting the live newswire (E24 · Oslo Børs)…</div>
-          )}
-          {feedItems.slice(0, 6).map((n, i) => (
-            <a key={i} href={n.link || undefined} target="_blank" rel="noreferrer" style={css("display:block; padding:11px 14px; border-bottom:1px solid #191D23; text-decoration:none;")}>
-              <div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>{n.ticker}</span><span>{n.time}</span><span style={css("color:#8A929E;")}>{n.source}</span></div>
-              <div style={css("font-size:12.5px; line-height:1.4; color:#DDE1E7;")}>{n.title}</div>
-            </a>
-          ))}
-        </div>
-        <div style={css("border-top:1px solid #23272E;")}>
-          <div style={css("padding:11px 14px 8px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Triggered alerts</span></div>
-          {triggeredToday.length === 0 && (
-            <div style={css("padding:9px 14px 12px; font-size:12px; color:#5B626C;")}>No alerts triggered today.</div>
-          )}
-          {triggeredToday.slice(0, 2).map((t, i) => (
-            <div key={i} style={css("padding:9px 14px; display:flex; align-items:center; gap:10px; border-top:1px solid #191D23;")}><span style={css(`width:8px; height:8px; border-radius:2px; background:${t.cond === 'below' ? '#E4655E' : '#3DBB84'}; flex:0 0 auto;`)}></span><span className="mono" style={css("font-size:12px; color:#EDEFF2;")}>{t.ticker}</span><span style={css("font-size:12px; color:#9AA1AC;")}>{condLabel(t)}</span><span className="mono" style={css("margin-left:auto; font-size:11px; color:#5B626C;")}>{t.at}</span></div>
-          ))}
-        </div>
-      </div>
-    </div>
-    </>)}
+    {isMarkets && <MarketsTab watchlist={watchlist} editWatch={editWatch} removeWatchSymbol={removeWatchSymbol} addWatchSymbol={addWatchSymbol} setEditWatch={setEditWatch} tfSpan={tfSpan} idxRange={idxRange} setIdxRange={setIdxRange} osebx={osebx} idxPath={idxPath} sectorTiles={sectorTiles} gainers={gainers} losers={losers} order={order} open={open} feedItems={feedItems} triggeredToday={triggeredToday} condLabel={condLabel} />}
 
     
-    {isWatch && (<>
-    <div data-screen-label="Watchlist" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
-      <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:18px;")}>
-        <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Watchlist</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>{watchFull.length} instrument{watchFull.length === 1 ? '' : 's'} · NOK/USD</span>
-        <div style={css("flex:1;")}></div>
-        {watchFull.length > 0 && (
-          <span onClick={() => setEditWatch((v) => !v)} className="mono" style={css(`cursor:pointer; font-size:12.5px; color:${editWatch ? '#EDEFF2' : '#8A929E'}; margin-right:10px;`)}>{editWatch ? 'Done' : 'Edit'}</span>
-        )}
-        <button onClick={addWatchSymbol} style={css("border:1px solid #2D5BD0; background:#2D5BD0; color:#fff; font-size:12.5px; font-weight:500; padding:7px 14px; border-radius:7px; cursor:pointer; font-family:inherit;")}>＋ Add symbol</button>
-      </div>
-      <div role="table" aria-label="Watchlist" aria-rowcount={watchFull.length} style={css("border:1px solid #23272E; border-radius:10px; overflow:hidden; background:#101317;")}>
-        <div role="row" className="mono" style={css("display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; padding:10px 18px; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
-          <span role="columnheader">Symbol</span><span role="columnheader" style={css("text-align:right;")}>Last</span><span role="columnheader" style={css("text-align:right;")}>Chg %</span><span role="columnheader" style={css("text-align:right;")}>Bid</span><span role="columnheader" style={css("text-align:right;")}>Ask</span><span role="columnheader" style={css("text-align:right;")}>Volume</span><span role="columnheader" style={css("text-align:right;")}>Day range</span><span role="columnheader" style={css("text-align:right;")}>7d</span>
-        </div>
-        {watchFull.length === 0 && (
-          <div style={css("padding:28px 18px; text-align:center; font-size:13px; color:#5B626C;")}>Your watchlist is empty. Click “＋ Add symbol” to start tracking instruments.</div>
-        )}
-        {watchFull.map((r, i) => (<React.Fragment key={i}>
-          <div role="row" onClick={editWatch ? undefined : r.open} style={css(`display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr 1fr 1.4fr 100px; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; ${editWatch ? '' : 'cursor:pointer;'}`)} className="hov-b">
-            <div role="cell"><span className="mono" style={css("font-weight:600; font-size:13.5px; color:#F2F4F7;")}>{r.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{r.name}</span></div>
-            <span role="cell" className="mono" style={css("text-align:right; font-size:13.5px; color:#EDEFF2;")}>{r.last}</span>
-            <span role="cell" className="mono" style={css("text-align:right; font-size:13px;")}>{r.chg}</span>
-            <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.bid}</span>
-            <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.ask}</span>
-            <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#9AA1AC;")}>{r.vol}</span>
-            <span role="cell" className="mono" style={css("text-align:right; font-size:12.5px; color:#7C8492;")}>{r.range}</span>
-            {editWatch ? (
-              <span role="cell" onClick={(e) => { e.stopPropagation(); removeWatchSymbol(r.ticker); }} className="mono" style={css("justify-self:end; color:#E4655E; cursor:pointer; font-size:12.5px;")}>✕ Remove</span>
-            ) : (
-              <span role="cell" style={css("justify-self:end;")}>{r.sparkEl}</span>
-            )}
-          </div>
-        </React.Fragment>))}
-      </div>
-    </div>
-    </>)}
+    {isWatch && <WatchlistTab watchFull={watchFull} editWatch={editWatch} setEditWatch={setEditWatch} addWatchSymbol={addWatchSymbol} removeWatchSymbol={removeWatchSymbol} />}
 
     
-    {isNews && (<>
-    <div data-screen-label="News" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
-      <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
-        <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Newsflow</h2>
-        <div style={css("flex:1;")}></div>
-        <div className="mono" style={css("display:flex; gap:4px; font-size:11.5px;")}>
-          <span style={css("padding:5px 11px; border-radius:6px; background:#1D2229; color:#fff; cursor:pointer;")}>All</span>
-          <span style={css("padding:5px 11px; border-radius:6px; color:#8A929E; cursor:pointer;")}>Watchlist</span>
-          <span style={css("padding:5px 11px; border-radius:6px; color:#8A929E; cursor:pointer;")}>Macro</span>
-          <span style={css("padding:5px 11px; border-radius:6px; color:#8A929E; cursor:pointer;")}>Insider</span>
-        </div>
-      </div>
-      <div className="m-split" style={css("display:grid; grid-template-columns:1.4fr 1fr; gap:22px; align-items:start;")}>
-        
-        <div>
-          <div style={css("border:1px solid #23272E; border-radius:12px; overflow:hidden; background:#101317;")}>
-            {feedItems.length === 0 ? (
-              <div style={css("padding:34px 20px; text-align:center;")}><div className="mono" style={css("font-size:12.5px; color:#8A929E;")}>Awaiting the live newswire…</div><div style={css("font-size:11.5px; color:#5B626C; margin-top:6px; line-height:1.5;")}>Headlines from E24 &amp; Oslo Børs load here as they publish — no placeholder stories.</div></div>
-            ) : (<>
-              {feedItems[0]?.image ? (
-                <img src={feedItems[0].image} alt={feedItems[0].title || 'News illustration'} style={css("width:100%; height:170px; object-fit:cover; display:block;")} />
-              ) : (
-                <div style={css("height:170px; background:repeating-linear-gradient(135deg,#171B21,#171B21 11px,#1B2027 11px,#1B2027 22px); display:flex; align-items:flex-end; padding:16px;")}></div>
-              )}
-              <a href={feedItems[0]?.link || undefined} target="_blank" rel="noreferrer" style={css("display:block; padding:18px 20px; text-decoration:none;")}>
-                <div className="mono" style={css("display:flex; gap:9px; font-size:11px; color:#5B626C; margin-bottom:8px;")}><span style={css("color:#6FA8FF;")}>{feedItems[0]?.ticker}</span><span>{feedItems[0]?.source}</span><span>{feedItems[0]?.time}</span></div>
-                <div style={css("font-size:18px; font-weight:600; line-height:1.35; color:#F2F4F7;")}>{feedItems[0]?.title}</div>
-              </a>
-            </>)}
-          </div>
-          <div style={css("margin-top:16px; border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            {feedItems.slice(1, 8).map((n, i) => (<React.Fragment key={i}>
-              <a href={n.link || undefined} target="_blank" rel="noreferrer" style={css("display:flex; gap:14px; padding:14px 18px; border-bottom:1px solid #191D23; cursor:pointer; text-decoration:none;")} className="hov-b">
-                {n.image ? (
-                  <img src={n.image} alt={n.title || 'News illustration'} style={css("width:64px; height:52px; border-radius:7px; object-fit:cover; flex:0 0 auto;")} />
-                ) : (
-                  <div style={css("width:64px; height:52px; border-radius:7px; background:repeating-linear-gradient(135deg,#171B21,#171B21 7px,#1B2027 7px,#1B2027 14px); flex:0 0 auto;")}></div>
-                )}
-                <div style={css("min-width:0;")}>
-                  <div className="mono" style={css("display:flex; gap:8px; font-size:10.5px; color:#5B626C; margin-bottom:4px;")}><span style={css("color:#6FA8FF;")}>{n.ticker}</span><span>{n.source}</span><span>{n.time}</span></div>
-                  <div style={css("font-size:13.5px; line-height:1.4; color:#DDE1E7; font-weight:500;")}>{n.title}</div>
-                </div>
-              </a>
-            </React.Fragment>))}
-          </div>
-        </div>
-        
-        <div style={css("display:flex; flex-direction:column; gap:16px;")}>
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Most read</span>
-            <div style={css("margin-top:12px; display:flex; flex-direction:column; gap:14px;")}>
-              {mostRead.length ? mostRead.map((m, i) => (
-                <a key={i} href={m.link || undefined} target="_blank" rel="noreferrer" style={css("display:flex; gap:12px; text-decoration:none;")}><span className="mono" style={css("font-size:16px; color:#3A414B; font-weight:600;")}>{String(i + 1).padStart(2, '0')}</span><span style={css("font-size:13px; line-height:1.4; color:#DDE1E7;")}>{m.title}</span></a>
-              )) : (
-                <span className="mono" style={css("font-size:11.5px; color:#5B626C; line-height:1.5;")}>Awaiting the live newswire (E24 · Oslo Børs)…</span>
-              )}
-            </div>
-          </div>
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Macro watch</span>
-            <div className="mono" style={css("margin-top:12px; font-size:12.5px;")}>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>Norges Bank rate</span><span style={css("color:#F2F4F7;")}>{macro.policyRate != null ? macro.policyRate.toFixed(2) + '%' : '—'}</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #191D23;")}><span style={css("color:#DDE1E7;")}>CPI (YoY)</span><span style={css("color:#F2F4F7;")}>{macro.cpi != null ? macro.cpi.toFixed(1) + '%' : '—'}</span></div>
-              <div style={css("display:flex; justify-content:space-between; padding:7px 0;")}><span style={css("color:#DDE1E7;")}>10y NOK gov bond</span><span style={css("color:#F2F4F7;")}>{macro.bond10y != null ? macro.bond10y.toFixed(2) + '%' : '—'}</span></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    </>)}
+    {isNews && <NewsTab feedItems={feedItems} mostRead={mostRead} macro={macro} />}
 
     
-    {isReports && (<>
-    <div data-screen-label="Reports" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
-      <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:18px;")}>
-        <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Reports &amp; earnings</h2>
-        <div style={css("flex:1;")}></div>
-        <div className="mono" style={css("display:flex; gap:4px; font-size:11.5px;")}>
-          <span style={css("padding:5px 11px; border-radius:6px; background:#1D2229; color:#fff; cursor:pointer;")}>Calendar</span>
-          <span style={css("padding:5px 11px; border-radius:6px; color:#8A929E; cursor:pointer;")}>Latest filings</span>
-        </div>
-      </div>
-      <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
-        
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-          <div style={css("padding:14px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Upcoming earnings</div>
-          {calendarDisplay.length === 0 && (
-            <div style={css("padding:22px 18px; font-size:12.5px; color:#5B626C; line-height:1.5;")}>Awaiting confirmed earnings dates from the analyst-consensus feed. No dates are shown until the live feed responds.</div>
-          )}
-          {calendarDisplay.map((c, i) => (<React.Fragment key={i}>
-            <div style={css("display:flex; align-items:center; gap:14px; padding:13px 18px; border-bottom:1px solid #191D23;")}>
-              <div style={css("width:46px; text-align:center; flex:0 0 auto;")}><div className="mono" style={css("font-size:17px; font-weight:600; color:#F2F4F7;")}>{c.day}</div><div style={css("font-size:10px; color:#5B626C; text-transform:uppercase;")}>{c.mon}</div></div>
-              <div style={css("flex:1;")}><div style={css("font-size:13.5px; font-weight:500; color:#EDEFF2;")}>{c.name}</div><div style={css("font-size:11.5px; color:#7C8492;")}>{c.when}</div></div>
-              <span className="mono" style={css("font-size:11px; color:#6FA8FF;")}>{c.ticker}</span>
-              <span style={css("font-size:10.5px; color:#5B626C; border:1px solid #2A2F37; border-radius:20px; padding:2px 9px;")}>{c.period}</span>
-            </div>
-          </React.Fragment>))}
-        </div>
-        
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-          <div style={css("padding:16px 20px; border-bottom:1px solid #23272E;")}>
-            <div style={css("display:flex; align-items:center; gap:10px;")}><span className="mono" style={css("font-weight:600; font-size:15px; color:#F2F4F7;")}>{reportTicker}</span><span style={css("font-size:13px; color:#8A929E;")}>{(base[reportTicker]?.name || reportTicker) + ' · latest reported'}</span>{rcBeat == null ? null : <span style={css(`margin-left:auto; font-size:10.5px; color:${rcBeat ? '#3DBB84' : '#E4655E'}; border:1px solid ${rcBeat ? '#1F5C43' : '#5A2A26'}; border-radius:20px; padding:2px 9px;`)}>{rcBeat ? 'Beat' : 'Miss'}</span>}</div>
-          </div>
-          <div style={css("padding:18px 20px;")}>
-            <div style={css("display:grid; grid-template-columns:1fr 1fr; gap:16px;")}>
-              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Revenue (TTM)</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{rcRev}</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>trailing 12m</div></div>
-              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Net income</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{rcNI}</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>latest FY</div></div>
-              <div><div style={css("font-size:11.5px; color:#7C8492;")}>EPS (TTM)</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{rcEps}</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>trailing</div></div>
-              <div><div style={css("font-size:11.5px; color:#7C8492;")}>Return on equity</div><div className="mono" style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin-top:3px;")}>{rcRoe}</div><div className="mono" style={css("font-size:11.5px; color:#9AA1AC; margin-top:2px;")}>trailing</div></div>
-            </div>
-            <div style={css("margin-top:18px; border-top:1px solid #191D23; padding-top:14px;")}>
-              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:8px;")}>Revenue trend (annual)</div>
-              <svg viewBox="0 0 420 90" preserveAspectRatio="none" style={css("width:100%; height:90px; display:block;")}>
-                {revBars
-                  ? revBars.map((b, i) => <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} fill={b.fill} />)
-                  : <><rect x="6" y="46" width="38" height="44" fill="#22303A"/><rect x="54" y="40" width="38" height="50" fill="#22303A"/><rect x="102" y="44" width="38" height="46" fill="#22303A"/><rect x="150" y="34" width="38" height="56" fill="#22303A"/><rect x="198" y="30" width="38" height="60" fill="#2D4A5C"/><rect x="246" y="26" width="38" height="64" fill="#2D4A5C"/><rect x="294" y="20" width="38" height="70" fill="#2F6E90"/><rect x="342" y="14" width="38" height="76" fill="#3DBB84"/></>}
-              </svg>
-            </div>
-            <div style={css("display:flex; gap:8px; margin-top:16px;")}>
-              <button style={css("border:1px solid #2A2F37; background:#191D24; color:#DDE1E7; font-size:12px; padding:7px 13px; border-radius:7px; cursor:pointer; font-family:inherit;")}>Open full report (PDF)</button>
-              <button style={css("border:1px solid #2A2F37; background:#191D24; color:#DDE1E7; font-size:12px; padding:7px 13px; border-radius:7px; cursor:pointer; font-family:inherit;")}>Presentation</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      
-      <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden; margin-top:22px;")}>
-        <div style={css("display:flex; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid #23272E;")}>
-          <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Analyst recommendations</span>
-          <span className="mono" style={css("font-size:10.5px; color:#5B626C;")}>brokers · last 7 days</span>
-          <div style={css("flex:1;")}></div>
-          <div className="mono" style={css("display:flex; align-items:center; gap:10px; font-size:11px;")}>
-            <span style={css("color:#3DBB84;")}>{buyN} Buy</span><span style={css("color:#8A929E;")}>{holdN} Hold</span><span style={css("color:#E4655E;")}>{sellN} Sell</span>
-          </div>
-        </div>
-        <div role="table" aria-label="Analyst recommendations">
-        <div role="row" className="mono" style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
-          <span role="columnheader">Coverage</span><span role="columnheader">Instrument</span><span role="columnheader" style={css("text-align:center;")}>Rating</span><span role="columnheader" style={css("text-align:right;")}>Target (range)</span><span role="columnheader" style={css("text-align:right;")}>Upside</span>
-        </div>
-        {analystDisplay.length === 0 && (
-          <div style={css("padding:22px 18px; font-size:12.5px; color:#5B626C; line-height:1.5;")}>Awaiting analyst consensus from the live feed (Yahoo). No broker figures are shown until it responds.</div>
-        )}
-        {analystDisplay.map((ar, i) => (<React.Fragment key={i}>
-          <div role="row" onClick={ar.open} style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
-            <span role="cell" style={css("font-size:12.5px; color:#DDE1E7;")}>{ar.broker}</span>
-            <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{ar.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{ar.name}</span></div>
-            <span role="cell" style={css("text-align:center;")}>{ar.ratingEl}</span>
-            <span role="cell" className="mono" style={css("text-align:right; font-size:12.5px; color:#EDEFF2;")}>{ar.target} <span style={css("color:#5B626C;")}>{ar.prev}</span></span>
-            <span role="cell" className="mono" style={css("text-align:right; font-size:11.5px; color:#7C8492;")}>{ar.date}</span>
-          </div>
-        </React.Fragment>))}
-        </div>
-      </div>
-    </div>
-    </>)}
+    {isReports && <ReportsTab calendarDisplay={calendarDisplay} reportTicker={reportTicker} reportName={base[reportTicker]?.name || reportTicker} rcBeat={rcBeat} rcRev={rcRev} rcNI={rcNI} rcEps={rcEps} rcRoe={rcRoe} revBars={revBars} buyN={buyN} holdN={holdN} sellN={sellN} analystDisplay={analystDisplay} />}
 
     
-    {isAlerts && (<>
-    <div data-screen-label="Alerts" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
-      <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:18px;")}>
-        <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Alerts</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>{alertRules.length} active · {triggeredToday.filter((t) => t.date === todayKey).length} triggered today</span>
-      </div>
-      <div className="m-split" style={css("display:grid; grid-template-columns:1.3fr 1fr; gap:22px; align-items:start;")}>
-        <div style={css("display:flex; flex-direction:column; gap:16px;")}>
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div style={css("padding:13px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Active rules</div>
-            {alertRules.length === 0 && (
-              <div style={css("padding:16px 18px; font-size:13px; color:#5B626C;")}>No active alerts. Create one on the right.</div>
-            )}
-            {alertRules.map((rule, i) => (
-              <div key={rule.id} style={css(`display:flex; align-items:center; gap:12px; padding:14px 18px; ${i < alertRules.length - 1 ? 'border-bottom:1px solid #191D23;' : ''}`)}>
-                <span className="mono" style={css("font-weight:600; color:#F2F4F7; font-size:13.5px; width:56px;")}>{rule.ticker}</span>
-                <span style={css("font-size:13px; color:#DDE1E7;")}>{rule.cond === 'above' ? 'Price crosses above' : rule.cond === 'below' ? 'Price falls below' : 'Daily change exceeds'}</span>
-                <span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>{rule.cond === 'pct' ? `±${rule.price.toFixed(1)}%` : fmtNum(rule.price, 2)}</span>
-                <span onClick={() => removeAlertRule(rule.id)} className="mono" style={css("margin-left:auto; font-size:11.5px; color:#E4655E; cursor:pointer;")}>✕ Remove</span>
-              </div>
-            ))}
-          </div>
-          <div role="status" aria-live="polite" aria-label="Triggered alerts" style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div style={css("padding:13px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Triggered today</div>
-            {triggeredToday.filter((t) => t.date === todayKey).length === 0 && (
-              <div style={css("padding:16px 18px; font-size:13px; color:#5B626C;")}>Nothing triggered today.</div>
-            )}
-            {triggeredToday.filter((t) => t.date === todayKey).map((t, i, arr) => (
-              <div key={i} style={css(`padding:12px 18px; display:flex; align-items:center; gap:10px; ${i < arr.length - 1 ? 'border-bottom:1px solid #191D23;' : ''}`)}>
-                <span style={css(`width:8px; height:8px; border-radius:2px; background:${t.cond === 'below' ? '#E4655E' : '#3DBB84'};`)}></span>
-                <span className="mono" style={css("font-size:13px; color:#F2F4F7;")}>{t.ticker}</span>
-                <span style={css("font-size:13px; color:#9AA1AC;")}>{condLabel(t)}</span>
-                <span className="mono" style={css("margin-left:auto; font-size:11.5px; color:#5B626C;")}>{t.at}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:18px 20px;")}>
-          <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>New alert</span>
-          <div style={css("margin-top:14px; display:flex; flex-direction:column; gap:12px;")}>
-            <div>
-              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Symbol</div>
-              <select value={newAlertSym} onChange={(e) => setNewAlertSym(e.target.value)} className="mono" style={css("width:100%; background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:10px 12px; font-size:13px; color:#F2F4F7; font-family:inherit;")}>
-                {Object.keys(base).map((sym) => <option key={sym} value={sym}>{sym} — {base[sym].name}</option>)}
-              </select>
-            </div>
-            <div>
-              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Condition</div>
-              <div style={css("display:flex; gap:6px;")}>
-                {(['above', 'below', 'pct'] as const).map((c) => (
-                  <span key={c} onClick={() => setNewAlertCond(c)} style={css(`flex:1; text-align:center; border-radius:8px; padding:9px; font-size:12.5px; cursor:pointer; ${newAlertCond === c ? 'background:#2D5BD0; color:#fff;' : 'background:#191D24; border:1px solid #2A2F37; color:#9AA1AC;'}`)}>{c === 'above' ? 'Above' : c === 'below' ? 'Below' : '% move'}</span>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>{newAlertCond === 'pct' ? 'Daily change threshold (%)' : 'Target price'}</div>
-              <input value={newAlertPrice} onChange={(e) => setNewAlertPrice(e.target.value)} placeholder={newAlertCond === 'pct' ? '3.0' : '320.00'} className="mono" style={css("width:100%; box-sizing:border-box; background:#191D24; border:1px solid #2A2F37; border-radius:8px; padding:10px 12px; font-size:13px; color:#F2F4F7; font-family:inherit;")} />
-            </div>
-            <div><div style={css("font-size:11.5px; color:#7C8492; margin-bottom:5px;")}>Notify via</div><div style={css("display:flex; gap:8px; font-size:12.5px; color:#DDE1E7;")}><span style={css("background:#191D24; border:1px solid #2D5BD0; border-radius:20px; padding:5px 12px;")}>✓ Push</span><span style={css("background:#191D24; border:1px solid #2A2F37; border-radius:20px; padding:5px 12px; color:#9AA1AC;")}>Email</span></div></div>
-            <button onClick={createAlertRule} style={css("margin-top:4px; border:none; background:#2D5BD0; color:#fff; font-size:13px; font-weight:500; padding:11px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Create alert</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    </>)}
+    {isAlerts && <AlertsTab alertRules={alertRules} triggeredToday={triggeredToday} todayKey={todayKey} removeAlertRule={removeAlertRule} base={base} newAlertSym={newAlertSym} setNewAlertSym={setNewAlertSym} newAlertCond={newAlertCond} setNewAlertCond={setNewAlertCond} newAlertPrice={newAlertPrice} setNewAlertPrice={setNewAlertPrice} createAlertRule={createAlertRule} />}
 
     
-    {isAI && (<>
-    <div data-screen-label="AI Portfolio" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
-      
-      <div style={css("display:flex; align-items:flex-start; gap:14px; margin-bottom:16px;")}>
-        <div>
-          <div style={css("display:flex; align-items:center; gap:10px;")}>
-            <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>AI Portfolio</h2>
-            <span style={css("font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:#B79BFF; border:1px solid #3B2F63; background:#211B33; border-radius:20px; padding:3px 9px;")}>Autonomous</span>
-          </div>
-          <p style={css("font-size:13px; color:#8A929E; margin:6px 0 0; max-width:620px; line-height:1.5;")}>Holdings are chosen by a systematic factor model — a composite of 6-month momentum, 13/52-week trend, low volatility, and a value &amp; quality tilt — scored across the tracked Oslo Børs and US universe, then equal-weighted into the top names for the chosen risk level. Non-EEA holdings are marked <span style={css("color:#C79A3D;")}>Outside ASK</span>. Illustrative, not investment advice.</p>
-        </div>
-        <div style={css("flex:1;")}></div>
-        <div style={css("display:flex; flex-direction:column; align-items:flex-end; gap:8px;")}>
-          <div style={css("display:flex; align-items:center; gap:8px;")}>
-            {ledger && (
-              <button onClick={resetPortfolio} style={css("border:1px solid #3A2A2A; background:#1A1214; color:#E4938E; font-size:12.5px; font-weight:500; padding:9px 14px; border-radius:8px; cursor:pointer; font-family:inherit;")}>Reset</button>
-            )}
-            <button onClick={runRebalance} disabled={!quantModel.ready} style={css(`position:relative; border:none; background:${quantModel.ready ? 'linear-gradient(135deg,#7C5CFF,#4B33C7)' : '#2A2F37'}; color:#fff; font-size:12.5px; font-weight:500; padding:9px 16px; border-radius:8px; cursor:${quantModel.ready ? 'pointer' : 'not-allowed'}; font-family:inherit;`)}>↻ Rebalance now{pendingRebalance > 0 && <span className="mono" style={css("margin-left:7px; background:rgba(255,255,255,0.22); border-radius:20px; padding:1px 7px; font-size:10.5px;")}>{pendingRebalance}</span>}</button>
-          </div>
-          <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11px; color:#5B626C;")}>
-            <span>Last run {ledger?.log[0]?.date ?? '—'}</span>
-            <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:7px;height:7px;border-radius:50%;background:#3DBB84;box-shadow:0 0 0 3px rgba(14,138,95,0.18);")}></span>Nordnet · live prices</span>
-          </div>
-        </div>
-      </div>
-
-      
-      <div style={css("display:flex; align-items:center; gap:16px; border:1px solid #23272E; border-radius:12px; background:#101317; padding:12px 16px; margin-bottom:16px;")}>
-        <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; flex:0 0 auto;")}>AI risk level</span>
-        <div style={css("display:flex; gap:4px; background:#0E1013; border:1px solid #23272E; border-radius:9px; padding:3px;")}>
-          <span {...clickable(setRiskCons)} aria-pressed={risk === 'conservative'} style={css(riskConsStyle)}>Conservative</span>
-          <span {...clickable(setRiskBal)} aria-pressed={risk === 'balanced'} style={css(riskBalStyle)}>Balanced</span>
-          <span {...clickable(setRiskAgg)} aria-pressed={risk === 'aggressive'} style={css(riskAggStyle)}>Aggressive</span>
-        </div>
-        <span style={css("font-size:12px; color:#8A929E; line-height:1.4;")}>{riskNote}</span>
-      </div>
-
-      
-      <div className="m-grid4" style={css("display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:16px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Portfolio value</div>{ledger ? (<><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>NOK {fmtNum(port.totalValue, 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.sinceInception)}; margin-top:3px;`)}>{sinceIncStr} since inception</div></>) : (<><div className="skel" style={css("height:23px; width:150px; margin-top:6px;")}></div><div className="skel" style={css("height:12px; width:110px; margin-top:6px;")}></div></>)}</div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Today</div>{ledger ? (<><div className="mono" style={css(`font-size:23px; font-weight:600; color:${pctColor(port.totalToday)}; margin-top:5px;`)}>{port.totalToday >= 0 ? '+' : '−'}{fmtNum(Math.abs(port.totalToday), 0)}</div><div className="mono" style={css(`font-size:12px; color:${pctColor(port.todayPct)}; margin-top:3px;`)}>{pctText(port.todayPct)}</div></>) : (<><div className="skel" style={css("height:23px; width:110px; margin-top:6px;")}></div><div className="skel" style={css("height:12px; width:70px; margin-top:6px;")}></div></>)}</div>
-        <div onClick={toggleConv} style={css("border:1px solid #3B2F63; border-radius:12px; background:#141026; padding:15px 17px; cursor:pointer;")} className="hov-c"><div style={css("display:flex; align-items:center; gap:6px;")}><span style={css("font-size:11.5px; color:#7C8492;")}>AI conviction</span><span className="mono" style={css("margin-left:auto; font-size:10px; color:#B79BFF;")}>{convToggleLabel}</span></div><div className="mono" style={css("font-size:23px; font-weight:600; color:#B79BFF; margin-top:5px;")}>{convScore}</div><div style={css("font-size:12px; color:#8A929E; margin-top:3px;")}>{convTilt}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:15px 17px;")}><div style={css("font-size:11.5px; color:#7C8492;")}>Cash / next rebalance</div>{ledger ? (<><div className="mono" style={css("font-size:23px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{port.cashPct.toFixed(1)}%</div><div style={css(`font-size:12px; margin-top:3px; color:${pendingRebalance > 0 ? '#B79BFF' : '#8A929E'};`)}>{pendingRebalance > 0 ? `${pendingRebalance} change${pendingRebalance === 1 ? '' : 's'} pending — model selection drifted` : 'Holdings match the model'}</div></>) : (<><div className="skel" style={css("height:23px; width:80px; margin-top:6px;")}></div><div className="skel" style={css("height:12px; width:130px; margin-top:6px;")}></div></>)}</div>
-      </div>
-
-      
-      {showConv && (<>
-      <div style={css("border:1px solid #3B2F63; border-radius:12px; background:#120E22; padding:18px 20px; margin-bottom:16px;")}>
-        <div style={css("display:flex; align-items:baseline; gap:12px; margin-bottom:4px;")}>
-          <span style={css("font-size:14px; font-weight:600; color:#F2F4F7;")}>Why conviction is {convScore}</span>
-          <span style={css("font-size:12px; color:#8A929E;")}>Weighted signal factors, rebased to a 0–100 risk-appetite score</span>
-          <div style={css("flex:1;")}></div>
-          <span onClick={toggleConv} style={css("font-size:11px; color:#B79BFF; cursor:pointer;")}>Hide ✕</span>
-        </div>
-        <div style={css("display:grid; grid-template-columns:1fr 1fr; column-gap:36px; row-gap:2px; margin-top:12px;")}>
-          {convFactors.map((f, i) => (<React.Fragment key={i}>
-            <div style={css("display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid #1E1834;")}>
-              <div style={css("width:150px; flex:0 0 auto;")}><div style={css("font-size:12.5px; color:#EDEFF2;")}>{f.label}</div><div style={css("font-size:10.5px; color:#7C8492; line-height:1.35; margin-top:2px;")}>{f.why}</div></div>
-              <div style={css("flex:1; min-width:0;")}>{f.barEl}</div>
-              <span style={css("flex:0 0 auto;")}>{f.valEl}</span>
-            </div>
-          </React.Fragment>))}
-        </div>
-        <div style={css("display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:12px; border-top:1px solid #1E1834;")}>
-          <span className="mono" style={css("font-size:11px; color:#7C8492;")}>Base 30</span>
-          <span className="mono" style={css("font-size:11px; color:#7C8492;")}>+ net signals {convNet}</span>
-          <div style={css("flex:1;")}></div>
-          <span className="mono" style={css("font-size:13px; color:#B79BFF; font-weight:600;")}>= {convScore} · {convStance}</span>
-        </div>
-      </div>
-      </>)}
-
-      
-      <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden; margin-bottom:16px;")}>
-        <div style={css("display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid #23272E;")}>
-          <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Recommendations — next actions</span>
-          <span className="mono" style={css("font-size:10.5px; color:#5B626C;")}>AI-generated · not advice</span>
-          <div style={css("flex:1;")}></div>
-          <span className="mono" style={css("font-size:10.5px; color:#5B626C;")}>click a row for full thesis</span>
-        </div>
-        <div className="mono" style={css("display:grid; grid-template-columns:74px 2fr 1.3fr 0.9fr 2.4fr; gap:10px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
-          <span>Action</span><span>Instrument</span><span style={css("text-align:right;")}>Now → target</span><span style={css("text-align:right;")}>Upside</span><span>Rationale</span>
-        </div>
-        {aiRecos.length === 0 && (
-          <div style={css("padding:16px 18px; font-size:12.5px; color:#5B626C;")}>{quantModel.ready ? 'No changes recommended — current holdings already match the model.' : 'Loading signals…'}</div>
-        )}
-        {aiRecos.map((rc, i) => (<React.Fragment key={i}>
-          <div onClick={rc.open} style={css("display:grid; grid-template-columns:74px 2fr 1.3fr 0.9fr 2.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
-            <span>{rc.actEl}</span>
-            <div style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:13px; color:#F2F4F7;")}>{rc.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{rc.name}</span> {rc.askEl}</div>
-            <span className="mono" style={css("text-align:right; font-size:12.5px; color:#EDEFF2;")}>{rc.nowTarget}</span>
-            <span style={css("text-align:right;")}>{rc.upsideEl}</span>
-            <span style={css("font-size:11.5px; color:#9AA1AC; line-height:1.4;")}>{rc.reason}</span>
-          </div>
-        </React.Fragment>))}
-      </div>
-
-      
-      <div className="m-split" style={css("display:grid; grid-template-columns:1fr 384px; gap:22px; align-items:start;")}>
-        
-        <div style={css("display:flex; flex-direction:column; gap:16px;")}>
-          
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("display:flex; align-items:baseline; gap:12px; margin-bottom:6px;")}>
-              <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Rebalance history</span>
-              <div style={css("flex:1;")}></div>
-              <div className="mono" style={css("display:flex; align-items:center; gap:14px; font-size:11px; color:#9AA1AC;")}>
-                <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#3DBB84;")}></span>AI Portfolio</span>
-                <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:14px;height:3px;border-radius:2px;background:#4E5661;")}></span>OSEBX</span>
-                <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("color:#B79BFF;")}>◇</span>Rebalance</span>
-              </div>
-            </div>
-            <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:12px;")}>
-              <span className="mono" style={css("font-size:22px; font-weight:600; color:#F2F4F7;")}>{sinceIncStr}</span>
-              <span className="mono" style={css("font-size:12px; color:#8A929E;")}>since inception · {todayLabel()}</span>
-              {navChart?.relStr && <span className="mono" style={css(`font-size:12px; color:${navChart.relStr.startsWith('-') ? '#E4655E' : '#3DBB84'};`)}>{navChart.relStr}</span>}
-            </div>
-            {navChart ? (
-              <svg viewBox="0 0 720 200" preserveAspectRatio="none" style={css("width:100%; height:190px; display:block; margin-bottom:8px;")}>
-                <defs><linearGradient id="navgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={navChart.up ? '#3DBB84' : '#E4655E'} stopOpacity="0.20"/><stop offset="100%" stopColor={navChart.up ? '#3DBB84' : '#E4655E'} stopOpacity="0"/></linearGradient></defs>
-                <path d={navChart.navArea} fill="url(#navgrad)"/>
-                {navChart.benchLine && <polyline points={navChart.benchLine} fill="none" stroke="#4E5661" strokeWidth="1.8"/>}
-                <polyline points={navChart.navLine} fill="none" stroke={navChart.up ? '#3DBB84' : '#E4655E'} strokeWidth="2.2"/>
-              </svg>
-            ) : (
-              <div style={css("border:1px dashed #23272E; border-radius:10px; padding:22px 18px; text-align:center; margin-bottom:4px;")}>
-                <div style={css("font-size:13px; color:#9AA1AC;")}>No performance history yet — the portfolio was built today.</div>
-                <div style={css("font-size:11.5px; color:#5B626C; margin-top:4px;")}>A real equity curve accumulates here once per day you open the app.</div>
-              </div>
-            )}
-            <div style={css("display:flex; align-items:center; gap:8px; margin-top:12px; margin-bottom:10px;")}><span style={css("font-size:10.5px; color:#7C8492;")}>{rebalEvents.length ? 'Click a rebalance to see what triggered it' : 'Loading…'}</span></div>
-            <div style={css("display:flex; gap:8px; overflow-x:auto; padding-bottom:2px;")}>
-              {rebalEvents.map((rb, i) => (<React.Fragment key={i}>
-                <div onClick={rb.select} style={css(rb.cardStyle)}><div className="mono" style={css("font-size:10.5px; color:#B79BFF;")}>◇ {rb.date}</div><div style={css("font-size:11px; color:#DDE1E7; margin-top:2px;")}>{rb.changes}</div><div className="mono" style={css("font-size:10px; margin-top:1px;")}>{rb.deltaEl}</div></div>
-              </React.Fragment>))}
-            </div>
-            {rbOpen && (<>
-            <div style={css("margin-top:12px; border:1px solid #3B2F63; border-radius:10px; background:#120E22; padding:14px 16px;")}>
-              <div style={css("display:flex; align-items:center; gap:10px; margin-bottom:10px;")}>
-                <span className="mono" style={css("font-size:12px; color:#B79BFF; font-weight:600;")}>◇ {rbSel.date} rebalance</span>
-                <span style={css("font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#C7BFD6; border:1px solid #3B2F63; background:#211B33; border-radius:20px; padding:2px 9px;")}>{rbSel.trigType}</span>
-                <div style={css("flex:1;")}></div>
-                <span className="mono" style={css("font-size:11px;")}>{rbSel.deltaEl}</span>
-              </div>
-              <div style={css("font-size:11px; color:#7C8492; margin-bottom:4px;")}>Trigger condition</div>
-              <div className="mono" style={css("font-size:12.5px; color:#EDEFF2; background:#0E0B18; border:1px solid #221B38; border-radius:7px; padding:9px 11px;")}>{rbSel.condition}</div>
-              <div style={css("font-size:11px; color:#7C8492; margin:12px 0 4px;")}>What the AI saw</div>
-              <p style={css("font-size:12.5px; line-height:1.55; color:#DDE1E7; margin:0;")}>{rbSel.reasoning}</p>
-              <div style={css("font-size:11px; color:#7C8492; margin:12px 0 8px;")}>Actions executed</div>
-              {rbSel.actions.map((ac, i) => (<React.Fragment key={i}>
-                <div style={css("display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid #1E1834;")}>
-                  <span style={css("flex:0 0 auto;")}>{ac.dotEl}</span>
-                  <span style={css("font-size:12.5px; color:#EDEFF2;")}>{ac.text}</span>
-                  <span className="mono" style={css("margin-left:auto; font-size:11px; color:#9AA1AC;")}>{ac.detail}</span>
-                </div>
-              </React.Fragment>))}
-            </div>
-            </>)}
-          </div>
-          
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Current allocation</span><span className="mono" style={css("font-size:11px; color:#5B626C;")}>by theme</span></div>
-            <div style={css("display:flex; height:14px; border-radius:6px; overflow:hidden; gap:2px;")}>
-              {port.themeAlloc.map((t, i) => (
-                <div key={i} style={css(`width:${t.pct}%; background:${THEME_COLORS[t.label] || '#3A414B'};`)}></div>
-              ))}
-            </div>
-            <div className="mono" style={css("display:flex; flex-wrap:wrap; gap:14px; margin-top:12px; font-size:11.5px; color:#9AA1AC;")}>
-              {port.themeAlloc.map((t, i) => (
-                <span key={i} style={css("display:flex; align-items:center; gap:6px;")}><span style={css(`width:9px;height:9px;border-radius:2px;background:${THEME_COLORS[t.label] || '#3A414B'};`)}></span>{t.label} {t.pct.toFixed(1)}%</span>
-              ))}
-            </div>
-          </div>
-          
-          <div role="table" aria-label="AI portfolio holdings" style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div role="row" className="mono" style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; padding:10px 18px; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
-              <span role="columnheader">Holding</span><span role="columnheader" style={css("text-align:right;")}>Alloc</span><span role="columnheader" style={css("text-align:right;")}>Value</span><span role="columnheader" style={css("text-align:right;")}>Today</span><span role="columnheader" style={css("text-align:center;")}>Conviction</span><span role="columnheader">AI driver · factor z-scores</span>
-            </div>
-            <div style={css("display:flex; align-items:center; gap:8px; padding:7px 18px; border-bottom:1px solid #191D23; background:#0C0E11;")}>
-              <span style={css("font-size:11px; color:#6B727C; line-height:1.4;")}>Each holding shows the cross-sectional factor z-scores behind its selection — <span className="mono" style={css("color:#8A929E;")}>Mom</span> (6-month momentum), <span className="mono" style={css("color:#8A929E;")}>Trend</span> (13/52-week), <span className="mono" style={css("color:#8A929E;")}>Low-vol</span> (inverted realized vol) and <span className="mono" style={css("color:#8A929E;")}>Val/Qual</span> (P/B inverted + ROE, today's snapshot). Higher is more favourable; “—” means the factor wasn't computable.</span>
-            </div>
-            <div style={css("display:flex; align-items:center; gap:8px; padding:8px 18px; border-bottom:1px solid #191D23; background:#0C0E11;")}>
-              <span style={css("font-size:10.5px; color:#C79A3D; border:1px solid #4A3E1E; background:#211B0E; border-radius:20px; padding:2px 8px; letter-spacing:0.03em;")}>◔ Outside ASK</span>
-              <span style={css("font-size:11px; color:#6B727C;")}>Non-EEA holdings (e.g. US shares) can't sit in an aksjesparekonto — booked on your Nordnet investeringskonto instead.</span>
-            </div>
-            {aiHoldings.map((h, i) => (<React.Fragment key={i}>
-              <div role="row" onClick={h.open} style={css("display:grid; grid-template-columns:2.2fr 0.8fr 1fr 0.9fr 1.1fr 1.4fr; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
-                <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:13px; color:#F2F4F7;")}>{h.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{h.name}</span> {h.askEl}<div style={css("font-size:10px; color:#5B626C; margin-top:1px;")}>{h.type}</div></div>
-                <span role="cell" className="mono" style={css("text-align:right; font-size:13px; color:#EDEFF2;")}>{h.alloc}</span>
-                <span role="cell" className="mono" style={css("text-align:right; font-size:12.5px; color:#9AA1AC;")}>{h.value}</span>
-                <span role="cell" style={css("text-align:right;")}>{h.chgEl}</span>
-                <span role="cell" style={css("text-align:center;")}>{h.convEl}</span>
-                <div role="cell" style={css("min-width:0;")}><span style={css("font-size:11.5px; color:#9AA1AC;")}>{h.driver}</span>{factorChips(h.factorZ)}</div>
-              </div>
-            </React.Fragment>))}
-            {aiHoldings.length === 0 && (
-              <div style={css("padding:26px 18px; text-align:center; font-size:12.5px; color:#5B626C; line-height:1.5;")}>{quantModel.error ? `Factor model unavailable: ${quantModel.error}` : quantModel.ready ? 'No names currently clear the model’s bar — the book is sitting in cash.' : 'Loading the factor model on real weekly prices…'}</div>
-            )}
-          </div>
-          
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div style={css("display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid #23272E;")}>
-              <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Portfolio log</span>
-              <span className="mono" style={css("font-size:10.5px; color:#5B626C;")}>executed transactions</span>
-              <div style={css("flex:1;")}></div>
-              <span onClick={exportPortfolioCsv} className="mono" style={css("font-size:10.5px; color:#6FA8FF; cursor:pointer;")}>Export CSV</span>
-            </div>
-            <div className="mono" style={css("display:grid; grid-template-columns:78px 62px 1.7fr 0.9fr 1fr 1.3fr; gap:10px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
-              <span>Date</span><span>Side</span><span>Instrument</span><span style={css("text-align:right;")}>Qty</span><span style={css("text-align:right;")}>Price</span><span>Account</span>
-            </div>
-            {portfolioLog.length === 0 && (
-              <div style={css("padding:16px 18px; font-size:12.5px; color:#5B626C;")}>Loading…</div>
-            )}
-            {portfolioLog.map((t, i) => (<React.Fragment key={i}>
-              <div style={css("display:grid; grid-template-columns:78px 62px 1.7fr 0.9fr 1fr 1.3fr; gap:10px; align-items:center; padding:10px 18px; border-bottom:1px solid #191D23;")}>
-                <span className="mono" style={css("font-size:12px; color:#9AA1AC;")}>{t.date}</span>
-                <span>{t.sideEl}</span>
-                <div style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{t.ticker}</span> <span style={css("font-size:11.5px; color:#7C8492;")}>{t.name}</span></div>
-                <span className="mono" style={css("text-align:right; font-size:12px; color:#EDEFF2;")}>{t.qty}</span>
-                <span className="mono" style={css("text-align:right; font-size:12px; color:#9AA1AC;")}>{t.price}</span>
-                <span style={css("font-size:11px; color:#7C8492;")}>{t.account}</span>
-              </div>
-            </React.Fragment>))}
-          </div>
-        </div>
-
-        
-        <div style={css("display:flex; flex-direction:column; gap:16px;")}>
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div style={css("display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid #23272E;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Signal feed</span><span className="mono" style={css("font-size:10px; color:#7C8492;")} title="Sentiment is a keyword-based tag on live headlines, not a machine-learning score.">keyword-tagged · live headlines</span></div>
-            {aiSignals.length === 0 && (
-              <div style={css("padding:16px; font-size:12px; color:#5B626C; line-height:1.5;")}>Awaiting the live newswire (E24 · Oslo Børs). Headlines are tagged Bullish / Bearish / Watch by keyword — a simple heuristic, not a sentiment model.</div>
-            )}
-            {aiSignals.map((sg, i) => (<React.Fragment key={i}>
-              <div style={css("padding:12px 16px; border-bottom:1px solid #191D23;")}>
-                <div className="mono" style={css("display:flex; align-items:center; gap:8px; font-size:10px; margin-bottom:6px;")}><span style={css("color:#7C8492;")}>{sg.cat}</span><span style={css("color:#5B626C;")}>·</span><span style={css("color:#5B626C;")}>{sg.source}</span><span style={css("margin-left:auto;")}>{sg.sentEl}</span></div>
-                <div style={css("font-size:12.5px; line-height:1.45; color:#DDE1E7;")}>{sg.text}</div>
-                <div className="mono" style={css("display:flex; align-items:center; gap:8px; margin-top:7px; font-size:10.5px; color:#5B626C;")}><span style={css("color:#6FA8FF;")}>{sg.tickers}</span><span style={css("margin-left:auto;")}>{sg.time}</span></div>
-              </div>
-            </React.Fragment>))}
-          </div>
-          
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div style={css("padding:12px 16px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Latest AI actions</div>
-            {aiActions.length === 0 && (
-              <div style={css("padding:14px 16px; font-size:12.5px; color:#5B626C;")}>{quantModel.ready ? 'No names currently clear the model’s bar — sitting in cash.' : 'Loading signals…'}</div>
-            )}
-            {aiActions.map((a, i) => (<React.Fragment key={i}>
-              <div style={css("display:flex; gap:10px; padding:12px 16px; border-bottom:1px solid #191D23;")}>
-                <span style={css("width:8px; height:8px; border-radius:2px; margin-top:5px; flex:0 0 auto;")} data-dot={a.dir}>{a.dotEl}</span>
-                <div style={css("min-width:0; flex:1;")}>
-                  <div style={css("display:flex; align-items:baseline; gap:8px;")}><div style={css("font-size:12.5px; color:#F2F4F7; line-height:1.4; font-weight:500;")}>{a.text}</div><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#5B626C; flex:0 0 auto;")}>{a.time}</span></div>
-                  <div style={css("font-size:11.5px; color:#9AA1AC; line-height:1.5; margin-top:5px;")}><span style={css("color:#B79BFF; font-weight:500;")}>Why: </span>{a.why}</div>
-                  <div style={css("display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;")}>
-                    <span className="mono" style={css("font-size:9.5px; letter-spacing:0.04em; text-transform:uppercase; color:#7C8492; border:1px solid #2A2F37; border-radius:20px; padding:2px 8px;")}>Signal · {a.basis}</span>
-                    <span className="mono" style={css("font-size:9.5px; letter-spacing:0.04em; text-transform:uppercase; color:#7C8492; border:1px solid #2A2F37; border-radius:20px; padding:2px 8px;")}>Confidence {a.conf}</span>
-                    <span className="mono" style={css("font-size:9.5px; letter-spacing:0.04em; text-transform:uppercase; color:#7C8492; border:1px solid #2A2F37; border-radius:20px; padding:2px 8px;")}>Impact {a.impact}</span>
-                  </div>
-                </div>
-              </div>
-            </React.Fragment>))}
-          </div>
-          
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
-            <div style={css("display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid #23272E;")}>
-              <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Dividends &amp; reports</span>
-            </div>
-            <div style={css("padding:6px 16px 4px;")}><span className="mono" style={css("font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C;")}>{divsLabel}</span></div>
-            {divsDisplay.length === 0 && (
-              <div style={css("padding:8px 16px 12px; font-size:11.5px; color:#5B626C; line-height:1.5;")}>No dividend history from the live feed yet.</div>
-            )}
-            {divsDisplay.map((d, i) => (<React.Fragment key={i}>
-              <div style={css("display:grid; grid-template-columns:56px 1fr auto auto; gap:10px; align-items:center; padding:9px 16px; border-bottom:1px solid #191D23;")}>
-                <span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{d.ticker}</span>
-                <span style={css("font-size:11px; color:#7C8492;")}>{d.ex}</span>
-                <span className="mono" style={css("font-size:12px; color:#EDEFF2;")}>{d.amount}</span>
-                <span className="mono" style={css("font-size:11px; color:#3DBB84; width:44px; text-align:right;")}>{d.yield}</span>
-              </div>
-            </React.Fragment>))}
-            <div style={css("padding:12px 16px 4px;")}><span className="mono" style={css("font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C;")}>Reports — held names</span></div>
-            {holdingReportsDisplay.length === 0 && (
-              <div style={css("padding:8px 16px 12px; font-size:11.5px; color:#5B626C; line-height:1.5;")}>No confirmed upcoming earnings dates for held names yet.</div>
-            )}
-            {holdingReportsDisplay.map((r, i) => (<React.Fragment key={i}>
-              <div onClick={r.open} style={css("display:grid; grid-template-columns:56px 1fr auto; gap:10px; align-items:center; padding:9px 16px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
-                <span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{r.ticker}</span>
-                <span style={css("font-size:11.5px; color:#DDE1E7;")}>{r.period}</span>
-                <span className="mono" style={css("font-size:11px; color:#9AA1AC;")}>{r.date}</span>
-              </div>
-            </React.Fragment>))}
-          </div>
-          <div style={css("border:1px dashed #2A2F37; border-radius:12px; background:#0E1013; padding:13px 16px; font-size:11.5px; line-height:1.5; color:#6B727C;")}>
-            <span style={css("color:#8A929E; font-weight:600;")}>Data sources.</span> Live prices, charts, dividends, analyst consensus &amp; earnings via Yahoo Finance; policy rate via Norges Bank; insider disclosures via Oslo Børs Newsweb; news via newswires. AI allocation &amp; signals are model-generated and not investment advice.
-          </div>
-        </div>
-      </div>
-    </div>
-    </>)}
+    {isAI && <AiPortfolioTab ledger={ledger} port={port} quantModel={quantModel} pendingRebalance={pendingRebalance} resetPortfolio={resetPortfolio} runRebalance={runRebalance} clickable={clickable} factorChips={factorChips} themeColors={THEME_COLORS} todayLabelStr={todayLabel()} risk={risk} riskConsStyle={riskConsStyle} riskBalStyle={riskBalStyle} riskAggStyle={riskAggStyle} riskNote={riskNote} setRiskCons={setRiskCons} setRiskBal={setRiskBal} setRiskAgg={setRiskAgg} sinceIncStr={sinceIncStr} showConv={showConv} toggleConv={toggleConv} convToggleLabel={convToggleLabel} convReady={convDataReady} convScore={convScore} convTilt={convTilt} convNet={convNet} convStance={convStance} convFactors={convFactors} aiRecos={aiRecos} navChart={navChart} rebalEvents={rebalEvents} rbOpen={rbOpen} rbSel={rbSel} aiHoldings={aiHoldings} exportPortfolioCsv={exportPortfolioCsv} portfolioLog={portfolioLog} aiSignals={aiSignals} aiActions={aiActions} divsLabel={divsLabel} divsDisplay={divsDisplay} holdingReportsDisplay={holdingReportsDisplay} />}
 
     
-    {isRisk && (<>
-    <div data-screen-label="Risk" className="screen" style={css("position:absolute; inset:0; overflow-y:auto; padding:22px 26px;")}>
-      <div style={css("display:flex; align-items:baseline; gap:14px; margin-bottom:16px;")}>
-        <h2 style={css("font-size:19px; font-weight:600; color:#F2F4F7; margin:0;")}>Risk &amp; exposure</h2>
-        <span style={css("font-size:13px; color:#8A929E;")}>AI Portfolio · NOK {fmtNum(port.totalValue, 0)} · as of {clock.time}</span>
-      </div>
-
-      
-      <div className="m-grid5" style={css("display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:18px;")}>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Portfolio beta</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#F2F4F7; margin-top:5px;")}>{rBeta}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>vs OSEBX · 1y</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Ann. volatility</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#C79A3D; margin-top:5px;")}>{rVol}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{rVolNote}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>1-day VaR (95%)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>{rVar}</div><div className="mono" style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>{rVarNok}</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Max drawdown</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#E4655E; margin-top:5px;")}>{rMdd}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>1y trailing</div></div>
-        <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:14px 16px;")}><div style={css("font-size:11px; color:#7C8492;")}>Sharpe (1y)</div><div className="mono" style={css("font-size:21px; font-weight:600; color:#3DBB84; margin-top:5px;")}>{rSharpe}</div><div style={css("font-size:11px; color:#8A929E; margin-top:2px;")}>risk-adjusted</div></div>
-      </div>
-
-      <div className="m-split" style={css("display:grid; grid-template-columns:1fr 1fr; gap:22px; align-items:start;")}>
-        
-        <div style={css("display:flex; flex-direction:column; gap:16px;")}>
-          
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:14px;")}>Exposure by sector</div>
-            {sectorExp.map((e, i) => (<React.Fragment key={i}>
-              <div style={css("display:flex; align-items:center; gap:12px; margin-bottom:11px;")}>
-                <span style={css("width:96px; flex:0 0 auto; font-size:12.5px; color:#DDE1E7;")}>{e.label}</span>
-                <div style={css("flex:1; height:9px; background:#1A1E24; border-radius:5px; overflow:hidden;")}>{e.barEl}</div>
-                <span className="mono" style={css("width:42px; text-align:right; flex:0 0 auto; font-size:12.5px; color:#EDEFF2;")}>{e.val}</span>
-              </div>
-            </React.Fragment>))}
-          </div>
-          
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:14px;")}>Geography &amp; currency</div>
-            <div style={css("display:flex; height:16px; border-radius:6px; overflow:hidden; gap:2px; margin-bottom:12px;")}>
-              {geoRows.map((g, i) => (<div key={i} style={css(`width:${g.pct}%; background:${g.color};`)}></div>))}
-            </div>
-            <div className="mono" style={css("display:flex; flex-wrap:wrap; gap:16px; font-size:11.5px; color:#9AA1AC;")}>
-              {geoRows.map((g, i) => (
-                <span key={i} style={css("display:flex; align-items:center; gap:6px;")}><span style={css(`width:9px;height:9px;border-radius:2px;background:${g.color};`)}></span>{g.label} {g.pct.toFixed(0)}%</span>
-              ))}
-            </div>
-          </div>
-
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:14px;")}>Account eligibility</div>
-            <div style={css("display:flex; height:16px; border-radius:6px; overflow:hidden; gap:2px; margin-bottom:12px;")}>
-              {askPct > 0.05 && <div style={css(`width:${askPct}%; background:#3DBB84;`)}></div>}
-              {outsideAskPct > 0.05 && <div style={css(`width:${outsideAskPct}%; background:#C79A3D;`)}></div>}
-            </div>
-            <div className="mono" style={css("display:flex; flex-wrap:wrap; gap:16px; font-size:11.5px; color:#9AA1AC;")}>
-              <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#3DBB84;")}></span>Aksjesparekonto (EEA) {askPct.toFixed(0)}%</span>
-              {outsideAskPct > 0.05 && <span style={css("display:flex; align-items:center; gap:6px;")}><span style={css("width:9px;height:9px;border-radius:2px;background:#C79A3D;")}></span>Investeringskonto · outside ASK {outsideAskPct.toFixed(0)}%</span>}
-            </div>
-          </div>
-        </div>
-
-        
-        <div style={css("display:flex; flex-direction:column; gap:16px;")}>
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("display:flex; align-items:baseline; gap:10px; margin-bottom:14px;")}><span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Concentration — top holdings</span><span className="mono" style={css("margin-left:auto; font-size:10.5px; color:#C79A3D;")}>Top 5 = {top5Pct.toFixed(0)}%</span></div>
-            {concExp.map((e, i) => (<React.Fragment key={i}>
-              <div style={css("display:flex; align-items:center; gap:12px; margin-bottom:11px;")}>
-                <span className="mono" style={css("width:64px; flex:0 0 auto; font-size:12.5px; color:#F2F4F7;")}>{e.label}</span>
-                <div style={css("flex:1; height:9px; background:#1A1E24; border-radius:5px; overflow:hidden;")}>{e.barEl}</div>
-                <span className="mono" style={css("width:42px; text-align:right; flex:0 0 auto; font-size:12.5px; color:#EDEFF2;")}>{e.val}</span>
-              </div>
-            </React.Fragment>))}
-          </div>
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; padding:16px 18px;")}>
-            <div style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600; margin-bottom:12px;")}>Factor tilt</div>
-            <div className="mono" style={css("display:grid; grid-template-columns:repeat(5,1fr); gap:8px; text-align:center;")}>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Value</div><div style={css("font-size:15px; color:#3DBB84; margin-top:3px;")}>+ High</div></div>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Momentum</div><div style={css("font-size:15px; color:#3DBB84; margin-top:3px;")}>+ High</div></div>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Size</div><div style={css("font-size:15px; color:#9AA1AC; margin-top:3px;")}>Large</div></div>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Quality</div><div style={css("font-size:15px; color:#9AA1AC; margin-top:3px;")}>Neutral</div></div>
-              <div><div style={css("font-size:11px; color:#7C8492;")}>Volatility</div><div style={css("font-size:15px; color:#C79A3D; margin-top:3px;")}>Elevated</div></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      
-      <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden; margin-top:18px;")}>
-        <div style={css("display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid #23272E;")}>
-          <span style={css("font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Scenario stress tests</span>
-          <span className="mono" style={css("font-size:10.5px; color:#5B626C;")}>portfolio β {effBeta != null ? effBeta.toFixed(2) : '—'} × index move · first-order, excludes sector effects</span>
-        </div>
-        <div className="mono" style={css("display:grid; grid-template-columns:1.8fr 2.6fr 1fr 1.4fr; gap:12px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
-          <span>Scenario</span><span>Transmission</span><span style={css("text-align:right;")}>Impact</span><span>Most exposed</span>
-        </div>
-        {scenarios.map((sc, i) => (<React.Fragment key={i}>
-          <div style={css("display:grid; grid-template-columns:1.8fr 2.6fr 1fr 1.4fr; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23;")}>
-            <span style={css("font-size:13px; color:#F2F4F7; font-weight:500;")}>{sc.name}</span>
-            <span style={css("font-size:12px; color:#9AA1AC; line-height:1.4;")}>{sc.how}</span>
-            <span style={css("text-align:right;")}>{sc.impactEl}</span>
-            <span className="mono" style={css("font-size:11.5px; color:#6FA8FF;")}>{sc.hit}</span>
-          </div>
-        </React.Fragment>))}
-      </div>
-    </div>
-    </>)}
+    {isRisk && <RiskTab portTotalValue={port.totalValue} clockTime={clock.time} rBeta={rBeta} rVol={rVol} rVolNote={rVolNote} rVar={rVar} rVarNok={rVarNok} rMdd={rMdd} rSharpe={rSharpe} sectorExp={sectorExp} geoRows={geoRows} askPct={askPct} outsideAskPct={outsideAskPct} concExp={concExp} top5Pct={top5Pct} effBeta={effBeta} scenarios={scenarios} />}
 
     
     {isFx && <FxTab clock={clock} foreignPct={foreignPct} usdPct={usdPct} ccyTotals={ccyTotals} fxCurrencyRows={fxCurrencyRows} fxRates={fxRates} fxHoldings={fxHoldings} />}
