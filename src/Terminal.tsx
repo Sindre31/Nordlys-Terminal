@@ -118,6 +118,14 @@ function stocks() {
     FRO: mk('Frontline'),
     ORK: mk('Orkla'),
     STB: mk('Storebrand'),
+    AKSO: mk('Aker Solutions'),
+    SUBC: mk('Subsea 7'),
+    SCATC: mk('Scatec'),
+    GJF: mk('Gjensidige'),
+    NOD: mk('Nordic Semiconductor'),
+    ELK: mk('Elkem'),
+    AKER: mk('Aker ASA'),
+    BAKKA: mk('Bakkafrost'),
   } as Record<string, StockDisplay>;
 }
 
@@ -340,12 +348,12 @@ export default function Terminal() {
   // than recomputed from scratch every render, so since-inception performance and the
   // rebalance history genuinely accumulate over time instead of resetting on every visit.
   const THEME_OF: Record<string, string> = {
-    EQNR: 'Energy', AKRBP: 'Energy', XOM: 'Energy',
-    KOG: 'Defence', LMT: 'Defence', TOM: 'Industrials',
-    NHY: 'Materials', YAR: 'Materials',
-    MOWI: 'Seafood', SALM: 'Seafood',
-    DNB: 'Financials', STB: 'Financials',
-    TEL: 'Telecom', NVDA: 'Tech', FRO: 'Shipping', ORK: 'Consumer',
+    EQNR: 'Energy', AKRBP: 'Energy', XOM: 'Energy', AKSO: 'Energy', SUBC: 'Energy', SCATC: 'Energy',
+    KOG: 'Defence', LMT: 'Defence', TOM: 'Industrials', AKER: 'Industrials',
+    NHY: 'Materials', YAR: 'Materials', ELK: 'Materials',
+    MOWI: 'Seafood', SALM: 'Seafood', BAKKA: 'Seafood',
+    DNB: 'Financials', STB: 'Financials', GJF: 'Financials',
+    TEL: 'Telecom', NVDA: 'Tech', NOD: 'Tech', FRO: 'Shipping', ORK: 'Consumer',
   };
   const CASH_FRACTION: Record<RiskLevel, number> = { conservative: 0.15, balanced: 0.065, aggressive: 0.02 };
   const TOTAL_AUM = 1_300_000;
@@ -447,6 +455,7 @@ export default function Terminal() {
   const CCY: Record<string, 'NOK' | 'USD' | 'Mixed'> = {
     EQNR: 'NOK', KOG: 'NOK', AKRBP: 'NOK', NHY: 'NOK', YAR: 'NOK', MOWI: 'NOK', DNB: 'NOK', TEL: 'NOK', SALM: 'NOK',
     TOM: 'NOK', FRO: 'NOK', ORK: 'NOK', STB: 'NOK',
+    AKSO: 'NOK', SUBC: 'NOK', SCATC: 'NOK', GJF: 'NOK', NOD: 'NOK', ELK: 'NOK', AKER: 'NOK', BAKKA: 'NOK',
     LMT: 'USD', XOM: 'USD', NVDA: 'USD', GLOBAL: 'Mixed',
   };
   const port = computePortfolio(live, POSITIONS, CASH_NOK);
@@ -751,6 +760,9 @@ export default function Terminal() {
   const HOLD_NAMES: Record<string, string[]> = {
     EQNR: ['equinor'], KOG: ['kongsberg'], AKRBP: ['aker bp'], NHY: ['hydro'], YAR: ['yara'],
     MOWI: ['mowi'], DNB: ['dnb'], TEL: ['telenor'], NVDA: ['nvidia'], LMT: ['lockheed'], XOM: ['exxon'], SALM: ['salmar'],
+    TOM: ['tomra'], FRO: ['frontline'], ORK: ['orkla'], STB: ['storebrand'],
+    AKSO: ['aker solutions'], SUBC: ['subsea 7', 'subsea7'], SCATC: ['scatec'], GJF: ['gjensidige'],
+    NOD: ['nordic semiconductor'], ELK: ['elkem'], AKER: ['aker asa'], BAKKA: ['bakkafrost'],
   };
   const BULL = /(raise|raises|beat|beats|wins?|win |contract|record|higher|upgrade|surge|jump|approv|expand|growth|strong)/i;
   const BEAR = /(cut|cuts|fall|falls|slip|drop|tariff|probe|warn|lower|downgrade|loss|weak|delay|miss|strike|halt)/i;
@@ -1035,11 +1047,11 @@ export default function Terminal() {
   // constituents are shown, and a sector whose members have no live quote yet renders "—"
   // (pct=null) instead of a fabricated number — no designed placeholder values.
   const SECTOR_MEMBERS: Record<string, string[]> = {
-    Energy: ['EQNR', 'AKRBP'],
-    Materials: ['NHY', 'YAR'],
-    Financials: ['DNB'],
-    Seafood: ['MOWI', 'SALM'],
-    Industrials: ['KOG'],
+    Energy: ['EQNR', 'AKRBP', 'AKSO', 'SUBC', 'SCATC'],
+    Materials: ['NHY', 'YAR', 'ELK'],
+    Financials: ['DNB', 'GJF'],
+    Seafood: ['MOWI', 'SALM', 'BAKKA'],
+    Industrials: ['KOG', 'AKER'],
     Telecom: ['TEL'],
   };
   const sectorTiles = Object.entries(SECTOR_MEMBERS).map(([name, members]) => {

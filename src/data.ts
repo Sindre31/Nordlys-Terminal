@@ -21,6 +21,14 @@ export const STOCK_YAHOO: Record<string, string> = {
   FRO: 'FRO.OL',
   ORK: 'ORK.OL',
   STB: 'STB.OL',
+  AKSO: 'AKSO.OL',
+  SUBC: 'SUBC.OL',
+  SCATC: 'SCATC.OL',
+  GJF: 'GJF.OL',
+  NOD: 'NOD.OL',
+  ELK: 'ELK.OL',
+  AKER: 'AKER.OL',
+  BAKKA: 'BAKKA.OL',
 };
 
 // Index / commodity / FX strip.
