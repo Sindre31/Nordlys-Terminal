@@ -76,13 +76,15 @@ export function factorBar(val: number) {
 }
 export function factorVal(val: number) {
   const up = val >= 0;
+  // Format to one decimal so a non-integer factor value doesn't print a long float.
+  const num = Number.isInteger(val) ? String(val) : val.toFixed(1);
   return React.createElement(
     'span',
     {
       className: 'mono',
       style: { fontSize: 12.5, fontWeight: 600, color: up ? '#3DBB84' : '#E4655E', width: 34, display: 'inline-block', textAlign: 'right' },
     },
-    (up ? '+' : '') + val,
+    (up ? '+' : '') + num,
   );
 }
 

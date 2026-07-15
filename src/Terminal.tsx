@@ -113,6 +113,10 @@ type RiskLevel = 'conservative' | 'balanced' | 'aggressive';
 
 const TABS: Tab[] = ['markets', 'watchlist', 'news', 'reports', 'alerts', 'ai', 'risk', 'fx', 'attr', 'ins', 'bt'];
 const RISK_LEVELS: RiskLevel[] = ['conservative', 'balanced', 'aggressive'];
+const TAB_TITLES: Record<Tab, string> = {
+  markets: 'Markets', watchlist: 'Watchlist', news: 'News', reports: 'Reports', alerts: 'Alerts',
+  ai: 'AI Portfolio', risk: 'Risk', fx: 'Currency', attr: 'Attribution', ins: 'Insider', bt: 'Backtest',
+};
 
 export default function Terminal() {
   // Restore the last-viewed tab and risk level so a refresh doesn't dump the user back to Markets /
@@ -143,6 +147,8 @@ export default function Terminal() {
   const [newAlertPrice, setNewAlertPrice] = useState('');
 
   useEffect(() => { saveLS('nordlys_tab', tab); }, [tab]);
+  // Reflect the active section in the tab title (SEO + orientation across browser tabs).
+  useEffect(() => { document.title = `${TAB_TITLES[tab]} · Nordlys Terminal`; }, [tab]);
   useEffect(() => { saveLS('nordlys_risk', risk); }, [risk]);
   useEffect(() => { saveLS('nordlys_watchlist', watchTickers); }, [watchTickers]);
   useEffect(() => { saveLS('nordlys_alert_rules', alertRules); }, [alertRules]);
@@ -208,7 +214,6 @@ export default function Terminal() {
   const dividendSyms = Object.values(STOCK_YAHOO);
   const dividends = useDividends(dividendSyms);
   const insiderLive = useInsider();
-  const dnbFund = useFundamentals('DNB.OL');
   const marketNews = useNews('');
   const stockNews = useNews(stock ? stocks()[stock]?.name || '' : '', stock || '');
   const idxCloses = useChart('OSEBX.OL', idxRange);
@@ -417,6 +422,12 @@ export default function Terminal() {
     LMT: 'USD', XOM: 'USD', NVDA: 'USD', GLOBAL: 'Mixed',
   };
   const port = computePortfolio(live, POSITIONS, CASH_NOK);
+
+  // Featured report card follows the AI portfolio's largest holding (falls back to DNB before any
+  // holding is priced), so it reflects the actual book rather than a fixed name.
+  const reportTicker = [...port.rows].sort((a, b) => b.valueNok - a.valueNok)[0]?.ticker || 'DNB';
+  const reportYahoo = STOCK_YAHOO[reportTicker] || 'DNB.OL';
+  const rcFund = useFundamentals(reportYahoo);
 
   // Once-a-day: accrue interest on idle cash at the live Norges Bank policy rate and take a
   // real NAV snapshot (rather than a fabricated equity curve) so a genuine, if sparse,
@@ -686,7 +697,7 @@ export default function Terminal() {
       type: `Share · ${EXCHANGE_OF[p.ticker] || 'Oslo Børs'} · ${p.theme}`,
       driver: sig?.reason || 'Selected by the momentum/trend/low-volatility factor model.',
       factorZ: sig?.factorZ ?? EMPTY_FZ,
-      conv: 'Medium',
+      conv: '—', // no fabricated conviction until the real engine has data
       ask: isOsloListed(p.ticker),
     };
   }).map((h) => {
@@ -1226,13 +1237,13 @@ export default function Terminal() {
     if (Math.abs(v) >= 1e6) return pfx + (v / 1e6).toFixed(0) + 'm';
     return pfx + fmtNum(v, 0);
   };
-  const rcCur = dnbFund?.currency || 'NOK';
-  const rcRev = dnbFund ? fmtBn(dnbFund.revenue, rcCur) : '—';
-  const rcNI = dnbFund ? fmtBn(dnbFund.netIncome, rcCur) : '—';
-  const rcEps = dnbFund && dnbFund.eps != null ? dnbFund.eps.toFixed(2) : '—';
-  const rcRoe = dnbFund && dnbFund.roe != null ? (dnbFund.roe * 100).toFixed(1) + '%' : '—';
-  const rcBeat = dnbFund ? dnbFund.beat : null;
-  const revTrend = dnbFund?.revenueTrend?.length ? dnbFund.revenueTrend.slice(-8) : null;
+  const rcCur = rcFund?.currency || 'NOK';
+  const rcRev = rcFund ? fmtBn(rcFund.revenue, rcCur) : '—';
+  const rcNI = rcFund ? fmtBn(rcFund.netIncome, rcCur) : '—';
+  const rcEps = rcFund && rcFund.eps != null ? rcFund.eps.toFixed(2) : '—';
+  const rcRoe = rcFund && rcFund.roe != null ? (rcFund.roe * 100).toFixed(1) + '%' : '—';
+  const rcBeat = rcFund ? rcFund.beat : null;
+  const revTrend = rcFund?.revenueTrend?.length ? rcFund.revenueTrend.slice(-8) : null;
   const revBars = revTrend
     ? (() => {
         const max = Math.max(...revTrend);
@@ -1317,7 +1328,7 @@ export default function Terminal() {
   const convToggleLabel = showConv ? 'ⓘ Hide' : 'ⓘ Explain';
   const hasStock = !!stock;
   const closeStock = () => setStock(null);
-  const sSym = stock || 'EQNR', sName = cur.name, sLast = cur.last, sOpen = cur.open, sRange = cur.range, sVol = cur.vol, sCap = cur.cap;
+  const sSym = stock || 'EQNR', sName = cur.name, sLast = cur.last, sOpen = cur.open, sRange = cur.range, sVol = cur.vol;
   const sCur = cur.cur || 'NOK', sChgEl = chgEl(cur.chg, 14);
   // Stat tiles come from real data, not the static thesis: analyst consensus target (Yahoo),
   // upside vs the live price, the model's own current signal, and — if the name is actually held —
@@ -1325,6 +1336,16 @@ export default function Terminal() {
   // so nothing here is a fabricated per-stock number.
   const sYh = STOCK_YAHOO[sSym];
   const sSum = sYh ? summary[sYh] : undefined;
+  // Real market cap from Yahoo (native currency), formatted; "—" until it loads.
+  const sCap = (() => {
+    const v = sSum?.marketCap ?? null;
+    if (v == null) return '—';
+    const pfx = sSum?.marketCapCcy === 'USD' ? '$' : sSum?.marketCapCcy ? sSum.marketCapCcy + ' ' : '';
+    if (v >= 1e12) return pfx + (v / 1e12).toFixed(2) + 'T';
+    if (v >= 1e9) return pfx + (v / 1e9).toFixed(1) + 'B';
+    if (v >= 1e6) return pfx + (v / 1e6).toFixed(0) + 'M';
+    return pfx + fmtNum(v, 0);
+  })();
   const sLivePrice = sYh ? live[sYh]?.price : undefined;
   const sPfx = isOsloListed(sSym) ? '' : '$';
   const sTarget = sSum?.targetMean != null ? sPfx + fmtNum(sSum.targetMean, sSum.targetMean >= 500 ? 0 : 1) : '—';
@@ -1359,6 +1380,7 @@ export default function Terminal() {
 <div className="app-root" style={css("height:100vh; display:flex; flex-direction:column; background:#14171B; color:#D5D9E0;")}>
 
   <a href="#main-content" className="skip-link" style={css("position:absolute; left:8px; top:-40px; z-index:100; background:#2D5BD0; color:#fff; padding:8px 14px; border-radius:0 0 8px 8px; font-size:13px; text-decoration:none;")}>Skip to content</a>
+  <h1 className="sr-only">Nordlys Terminal — Norwegian markets &amp; systematic AI portfolio</h1>
 
   <div className="topbar" style={css("display:flex; align-items:center; gap:20px; padding:0 18px; height:48px; background:#0E1013; border-bottom:1px solid #23272E; flex:0 0 auto;")}>
     <div style={css("display:flex; align-items:center; gap:9px;")}>
@@ -1408,7 +1430,7 @@ export default function Terminal() {
         : status === 'offline' ? 'Live data sources are unreachable right now — figures shown as “—”'
         : 'Connecting to live data sources…';
       return (
-        <div className="mono hide-sm" title={title} aria-label={title} style={css(`display:flex; align-items:center; gap:6px; font-size:11.5px; color:#8A929E;`)}>
+        <div className="mono hide-sm" role="status" aria-live="polite" title={title} aria-label={title} style={css(`display:flex; align-items:center; gap:6px; font-size:11.5px; color:#8A929E;`)}>
           <span style={css(`width:7px; height:7px; border-radius:50%; background:${m.color}; box-shadow:0 0 0 3px ${m.color}2E;`)}></span>
           {m.label}{status === 'live' && upd ? ` · ${upd}` : ''}
         </div>
@@ -1699,7 +1721,7 @@ export default function Terminal() {
         
         <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
           <div style={css("padding:16px 20px; border-bottom:1px solid #23272E;")}>
-            <div style={css("display:flex; align-items:center; gap:10px;")}><span className="mono" style={css("font-weight:600; font-size:15px; color:#F2F4F7;")}>DNB</span><span style={css("font-size:13px; color:#8A929E;")}>DNB Bank ASA · latest reported</span>{rcBeat == null ? null : <span style={css(`margin-left:auto; font-size:10.5px; color:${rcBeat ? '#3DBB84' : '#E4655E'}; border:1px solid ${rcBeat ? '#1F5C43' : '#5A2A26'}; border-radius:20px; padding:2px 9px;`)}>{rcBeat ? 'Beat' : 'Miss'}</span>}</div>
+            <div style={css("display:flex; align-items:center; gap:10px;")}><span className="mono" style={css("font-weight:600; font-size:15px; color:#F2F4F7;")}>{reportTicker}</span><span style={css("font-size:13px; color:#8A929E;")}>{(base[reportTicker]?.name || reportTicker) + ' · latest reported'}</span>{rcBeat == null ? null : <span style={css(`margin-left:auto; font-size:10.5px; color:${rcBeat ? '#3DBB84' : '#E4655E'}; border:1px solid ${rcBeat ? '#1F5C43' : '#5A2A26'}; border-radius:20px; padding:2px 9px;`)}>{rcBeat ? 'Beat' : 'Miss'}</span>}</div>
           </div>
           <div style={css("padding:18px 20px;")}>
             <div style={css("display:grid; grid-template-columns:1fr 1fr; gap:16px;")}>
@@ -1734,21 +1756,23 @@ export default function Terminal() {
             <span style={css("color:#3DBB84;")}>{buyN} Buy</span><span style={css("color:#8A929E;")}>{holdN} Hold</span><span style={css("color:#E4655E;")}>{sellN} Sell</span>
           </div>
         </div>
-        <div className="mono" style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
-          <span>Coverage</span><span>Instrument</span><span style={css("text-align:center;")}>Rating</span><span style={css("text-align:right;")}>Target (range)</span><span style={css("text-align:right;")}>Upside</span>
+        <div role="table" aria-label="Analyst recommendations">
+        <div role="row" className="mono" style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; padding:9px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #191D23; background:#0E1013;")}>
+          <span role="columnheader">Coverage</span><span role="columnheader">Instrument</span><span role="columnheader" style={css("text-align:center;")}>Rating</span><span role="columnheader" style={css("text-align:right;")}>Target (range)</span><span role="columnheader" style={css("text-align:right;")}>Upside</span>
         </div>
         {analystDisplay.length === 0 && (
           <div style={css("padding:22px 18px; font-size:12.5px; color:#5B626C; line-height:1.5;")}>Awaiting analyst consensus from the live feed (Yahoo). No broker figures are shown until it responds.</div>
         )}
         {analystDisplay.map((ar, i) => (<React.Fragment key={i}>
-          <div onClick={ar.open} style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
-            <span style={css("font-size:12.5px; color:#DDE1E7;")}>{ar.broker}</span>
-            <div style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{ar.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{ar.name}</span></div>
-            <span style={css("text-align:center;")}>{ar.ratingEl}</span>
-            <span className="mono" style={css("text-align:right; font-size:12.5px; color:#EDEFF2;")}>{ar.target} <span style={css("color:#5B626C;")}>{ar.prev}</span></span>
-            <span className="mono" style={css("text-align:right; font-size:11.5px; color:#7C8492;")}>{ar.date}</span>
+          <div role="row" onClick={ar.open} style={css("display:grid; grid-template-columns:1.7fr 1.9fr 84px 1.5fr 74px; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; cursor:pointer;")} className="hov-b">
+            <span role="cell" style={css("font-size:12.5px; color:#DDE1E7;")}>{ar.broker}</span>
+            <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{ar.ticker}</span> <span style={css("font-size:12px; color:#7C8492;")}>{ar.name}</span></div>
+            <span role="cell" style={css("text-align:center;")}>{ar.ratingEl}</span>
+            <span role="cell" className="mono" style={css("text-align:right; font-size:12.5px; color:#EDEFF2;")}>{ar.target} <span style={css("color:#5B626C;")}>{ar.prev}</span></span>
+            <span role="cell" className="mono" style={css("text-align:right; font-size:11.5px; color:#7C8492;")}>{ar.date}</span>
           </div>
         </React.Fragment>))}
+        </div>
       </div>
     </div>
     </>)}
@@ -1776,7 +1800,7 @@ export default function Terminal() {
               </div>
             ))}
           </div>
-          <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
+          <div role="status" aria-live="polite" aria-label="Triggered alerts" style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
             <div style={css("padding:13px 18px; border-bottom:1px solid #23272E; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#8A929E; font-weight:600;")}>Triggered today</div>
             {triggeredToday.filter((t) => t.date === todayKey).length === 0 && (
               <div style={css("padding:16px 18px; font-size:13px; color:#5B626C;")}>Nothing triggered today.</div>
@@ -2399,19 +2423,19 @@ export default function Terminal() {
       
       <div style={css("border:1px solid #23272E; border-radius:12px; background:#101317; overflow:hidden;")}>
         {insiderDisplay ? (
-          <>
-            <div className="mono" style={css("display:grid; grid-template-columns:70px 1.6fr 4fr 66px; gap:12px; padding:10px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
-              <span>Date</span><span>Company</span><span>Disclosure · Oslo Børs Newsweb</span><span style={css("text-align:center;")}>Side</span>
+          <div role="table" aria-label="Insider disclosures">
+            <div role="row" className="mono" style={css("display:grid; grid-template-columns:70px 1.6fr 4fr 66px; gap:12px; padding:10px 18px; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:#5B626C; border-bottom:1px solid #23272E; background:#0E1013;")}>
+              <span role="columnheader">Date</span><span role="columnheader">Company</span><span role="columnheader">Disclosure · Oslo Børs Newsweb</span><span role="columnheader" style={css("text-align:center;")}>Side</span>
             </div>
             {insiderDisplay.map((t, i) => (<React.Fragment key={i}>
-              <a href={t.link || undefined} target="_blank" rel="noreferrer" style={css("display:grid; grid-template-columns:70px 1.6fr 4fr 66px; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; text-decoration:none; cursor:pointer;")} className="hov-b">
-                <span className="mono" style={css("font-size:12px; color:#9AA1AC;")}>{t.date}</span>
-                <div style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{t.ticker}</span> <span style={css("font-size:11px; color:#7C8492; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;")}>{t.company}</span></div>
-                <span style={css("font-size:12px; color:#DDE1E7; line-height:1.35;")}>{t.title}</span>
-                <span style={css("text-align:center;")}>{t.sideEl}</span>
+              <a role="row" href={t.link || undefined} target="_blank" rel="noreferrer" style={css("display:grid; grid-template-columns:70px 1.6fr 4fr 66px; gap:12px; align-items:center; padding:12px 18px; border-bottom:1px solid #191D23; text-decoration:none; cursor:pointer;")} className="hov-b">
+                <span role="cell" className="mono" style={css("font-size:12px; color:#9AA1AC;")}>{t.date}</span>
+                <div role="cell" style={css("min-width:0;")}><span className="mono" style={css("font-weight:600; font-size:12.5px; color:#F2F4F7;")}>{t.ticker}</span> <span style={css("font-size:11px; color:#7C8492; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;")}>{t.company}</span></div>
+                <span role="cell" style={css("font-size:12px; color:#DDE1E7; line-height:1.35;")}>{t.title}</span>
+                <span role="cell" style={css("text-align:center;")}>{t.sideEl}</span>
               </a>
             </React.Fragment>))}
-          </>
+          </div>
         ) : (
           <div style={css("padding:40px 18px; text-align:center;")}>
             <div className="mono" style={css("font-size:12px; color:#8A929E;")}>Awaiting the Oslo Børs Newsweb feed…</div>

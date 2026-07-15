@@ -464,6 +464,8 @@ export interface SummaryInfo {
   numAnalysts: number | null;
   beta: number | null;
   trailingEps: number | null;
+  marketCap: number | null;
+  marketCapCcy: string | null;
   buy: number;
   hold: number;
   sell: number;

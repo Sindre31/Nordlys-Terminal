@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0b0d10"/>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#12203a" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#0b0d10" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(80,90)">
+    <rect width="60" height="60" rx="13" fill="#0f1622" stroke="#23303f"/>
+    <path d="M12 40 L23 22 L32 32 L50 15" fill="none" stroke="#3DBB84" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="80" y="42" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="34" font-weight="600" fill="#F2F4F7" letter-spacing="1">NORDLYS TERMINAL</text>
+  </g>
+  <text x="80" y="300" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="60" font-weight="700" fill="#F2F4F7">Norwegian markets &amp; a</text>
+  <text x="80" y="372" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="60" font-weight="700" fill="#F2F4F7">systematic AI portfolio</text>
+  <text x="80" y="452" font-family="'IBM Plex Mono', monospace" font-size="27" fill="#8A929E">Live Oslo Börs &amp; US data · news · momentum/trend/low-vol model vs OSEBX</text>
+  <text x="80" y="560" font-family="'IBM Plex Mono', monospace" font-size="22" fill="#5B626C">Illustrative — not investment advice</text>
+</svg>

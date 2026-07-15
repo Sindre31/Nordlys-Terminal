@@ -8,7 +8,7 @@ import { getCrumb } from '../lib/yahooCrumb.js';
 const UA = 'Mozilla/5.0 (compatible; NordlysTerminal/1.0)';
 
 async function fetchSummary(sym, cookie, crumb) {
-  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,recommendationTrend,calendarEvents,defaultKeyStatistics&crumb=${encodeURIComponent(crumb)}`;
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=financialData,recommendationTrend,calendarEvents,defaultKeyStatistics,price&crumb=${encodeURIComponent(crumb)}`;
   const r = await fetchWithTimeout(url, { headers: { 'User-Agent': UA, Cookie: cookie } });
   if (!r.ok) return null;
   const j = await r.json();
@@ -16,6 +16,7 @@ async function fetchSummary(sym, cookie, crumb) {
   if (!res) return null;
   const fd = res.financialData || {};
   const ks = res.defaultKeyStatistics || {};
+  const pr = res.price || {};
   const t0 = res.recommendationTrend?.trend?.[0] || {};
   const buy = (t0.strongBuy || 0) + (t0.buy || 0);
   const hold = t0.hold || 0;
@@ -32,6 +33,8 @@ async function fetchSummary(sym, cookie, crumb) {
     trailingEps: ks.trailingEps?.raw ?? null,
     priceToBook: ks.priceToBook?.raw ?? null,
     returnOnEquity: fd.returnOnEquity?.raw ?? null,
+    marketCap: pr.marketCap?.raw ?? null,
+    marketCapCcy: pr.currency ?? null,
     buy,
     hold,
     sell,
